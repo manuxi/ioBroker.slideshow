@@ -173,9 +173,11 @@
     "fs_format": 0,
     "fs_order": 0,
     "sentry_disable": false,
+    "syno_version": 0,
     "syno_path": "",
     "syno_username": "",
     "syno_userpass": "",
+    "syno_album": "",
     "syno_format": 0,
     "syno_order": 0,
     "downloadLocationData": false
