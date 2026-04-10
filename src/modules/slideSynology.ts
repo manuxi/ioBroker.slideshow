@@ -138,8 +138,8 @@ export async function getPicturePrefetch(Helper: GlobalHelper): Promise<void> {
 		}
 		Helper.ReportingInfo("Debug", "Synology", `Downloading picture ${CurrentImage.info3} (ID ${CurrentImage.path}, cacheKey: ${CurrentImage.cacheKey || "none"})`);
 		const synResult = await synoConnection.get<any>(synURL, { responseType: "arraybuffer" });
-		const PicContentB64 = synResult.data.toString("base64");
-		CurrentPicture = { ...CurrentImage, url: `data:image/jpeg;base64,${PicContentB64}` };
+		await Helper.Adapter.writeFileAsync(Helper.Adapter.namespace, "synology_current.jpg", synResult.data);
+		CurrentPicture = { ...CurrentImage, url: `/${Helper.Adapter.namespace}/synology_current.jpg?t=${Date.now()}` };
 	} catch (err) {
 		if ((err as AxiosError).response?.status === 502) {
 			Helper.ReportingError(err as Error, `Unknown Error downloading Picture ${CurrentImage.path}`, "Synology", "getPicturePrefetch/Retrieve", "", false);

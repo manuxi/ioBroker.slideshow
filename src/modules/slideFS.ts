@@ -40,8 +40,8 @@ export async function getPicture(Helper: GlobalHelper): Promise<FSPicture | null
 			if (fs.existsSync(CurrentImage.path) === true){
 				try {
 					const PicContent = fs.readFileSync(CurrentImage.path);
-					const PicContentB64 = PicContent.toString("base64");
-					return { ...CurrentImage, url: `data:image/jpeg;base64,${PicContentB64}`};
+					await Helper.Adapter.writeFileAsync(Helper.Adapter.namespace, "fs_current.jpg", PicContent);
+					return { ...CurrentImage, url: `/${Helper.Adapter.namespace}/fs_current.jpg?t=${Date.now()}`};
 				} catch (err) {
 					Helper.ReportingError(null, `File not accessible: ${CurrentImage.path}`, "Filesystem", "getPicture", "", false);
 					return null;
