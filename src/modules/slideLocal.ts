@@ -7,7 +7,8 @@ export interface LocalPicture{
 	info1: string,
 	info2: string,
 	info3: string,
-	date: Date | null
+	date: Date | null,
+	album: string
 }
 
 export interface LocalPictureListUpdateResult{
@@ -60,9 +61,9 @@ export async function updatePictureList(Helper: GlobalHelper): Promise<LocalPict
 				fileInfo?.info3 ? info3 = fileInfo?.info3 : info3 = "";
 				fileInfo?.date ? date = fileInfo?.date : date = null;
 				if (Array.isArray(CurrentImages)){
-					CurrentImages.push( {url: `/vis.0/slideshow/${file.file}`, path: file.file, info1: info1, info2: info2, info3: info3, date: date} );
+					CurrentImages.push( {url: `/vis.0/slideshow/${file.file}`, path: file.file, info1: info1, info2: info2, info3: info3, date: date, album: ""} );
 				}else{
-					CurrentImages = [ {url: `/vis.0/slideshow/${file.file}`, path: file.file, info1: info1, info2: info2, info3: info3, date: date} ];
+					CurrentImages = [ {url: `/vis.0/slideshow/${file.file}`, path: file.file, info1: info1, info2: info2, info3: info3, date: date, album: ""} ];
 				}
 			}))
 		}

@@ -21,7 +21,8 @@ interface Picture{
 	info1: string;
 	info2: string;
 	info3: string;
-	date: Date | null ;
+	date: Date | null;
+	album: string;
 }
 
 interface PictureListUpdateResult{
@@ -360,6 +361,20 @@ class Slideshow extends utils.Adapter {
 					native: {},
 				});
 				await this.setStateAsync("info3", { val: CurrentPictureResult.info3, ack: true });
+				// Set album
+				await this.setObjectNotExistsAsync("info_album", {
+					type: "state",
+					common: {
+						name: "info_album",
+						type: "string",
+						role: "text",
+						read: true,
+						write: false,
+						desc: "Album of picture"
+					},
+					native: {},
+				});
+				await this.setStateAsync("info_album", { val: CurrentPictureResult.album || "", ack: true });
 				// Set date
 				await this.setObjectNotExistsAsync("date", {
 					type: "state",

@@ -17,6 +17,7 @@ export interface SynoPicture {
 	apiNamespace: string,
 	cacheKey: string,
 	passphrase?: string,
+	album: string
 }
 
 export interface SynoPictureListUpdateResult {
@@ -459,7 +460,8 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 					y: element.additional?.resolution?.width || 0,
 					apiNamespace: itemApiNs,
 					cacheKey: cacheKey,
-					passphrase: albumPassphrase || ""
+					passphrase: albumPassphrase || "",
+					album: albumName || ""
 				});
 			}
 
@@ -509,7 +511,7 @@ async function getDsm7FolderItems(Helper: GlobalHelper, imageList: SynoPicture[]
 						}
 						// Extract cache_key from thumbnail additional data (required for download)
 						const cacheKey = element.additional?.thumbnail?.cache_key || "";
-						imageList.push({ path: String(element.id), url: "", info1: element.description || "", info2: "", info3: element.filename || "", date: PictureDate, x: element.additional?.resolution?.height || 0, y: element.additional?.resolution?.width || 0, apiNamespace: "SYNO.FotoTeam", cacheKey: cacheKey });
+						imageList.push({ path: String(element.id), url: "", info1: element.description || "", info2: "", info3: element.filename || "", date: PictureDate, x: element.additional?.resolution?.height || 0, y: element.additional?.resolution?.width || 0, apiNamespace: "SYNO.FotoTeam", cacheKey: cacheKey, album: synoFolder.name || ""});
 					});
 					synOffset = synOffset + 500;
 				}
@@ -539,7 +541,7 @@ async function getDsm6Items(Helper: GlobalHelper, imageList: SynoPicture[]): Pro
 					PictureDate = new Date(element.info.takendate);
 				}
 				// DSM6 doesn't use cache_key - leave empty
-				imageList.push({ path: element.id, url: "", info1: element.info.title, info2: element.info.description, info3: element.info.name, date: PictureDate, x: element.info.resolutionx, y: element.info.resolutiony, apiNamespace: "", cacheKey: "" });
+				imageList.push({ path: element.id, url: "", info1: element.info.title, info2: element.info.description, info3: element.info.name, date: PictureDate, x: element.info.resolutionx, y: element.info.resolutiony, apiNamespace: "", cacheKey: "", album: Helper.Adapter.config.syno_album || "" });
 			});
 			if (synResult.data["data"]["total"] === synResult.data["data"]["offset"]) {
 				synEndOfFiles = true;

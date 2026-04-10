@@ -106,6 +106,7 @@
 		data-vis-prev='<img src="/slideshow.admin/slideshow.png" width="120px" height="120px">'
 		data-vis-attrs="oid[slideshow.0.picture]/id;
 				PictureFitWidget[false]/checkbox;
+				PictureBackgroundBlur[false]/checkbox;
 				Debug[false]/checkbox;"
 		data-vis-attrs0="group.effect;
 				SlideshowEffect[EffectNone]/select,EffectNone,EffectFade,EffectTransition,EffectJQuery/updateSlideshowEffect();
@@ -124,8 +125,10 @@
 	<div class="vis-widget <%== this.data.attr('class') %>" style="width:230px; height:210px;" id="<%= this.data.attr('wid') %>" >
 		<div class="slideshow-class vis-widget-body <%== this.data.attr('class') %>" style="padding:2px" >
 			<% vis.binds['slideshow'].showSlideshow(this.data.wid, this.view, this.data, this.style); %>
-			<img class="slideshowpicture slideshowpicture1" src="<%= vis.states[data.oid + ".val"] %>">
-			<img class="slideshowpicture slideshowpicture2" src="<%= vis.states[data.oid + ".val"] %>">
+			<img class="slideshowpicture_bg slideshowpicture1_bg" src="<%= vis.states[data.oid + '.val'] %>">
+			<img class="slideshowpicture_bg slideshowpicture2_bg" src="<%= vis.states[data.oid + '.val'] %>">
+			<img class="slideshowpicture slideshowpicture1" src="<%= vis.states[data.oid + '.val'] %>">
+			<img class="slideshowpicture slideshowpicture2" src="<%= vis.states[data.oid + '.val'] %>">
 		</div>
 	</div>
 </script>

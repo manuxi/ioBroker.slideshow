@@ -371,7 +371,8 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
           y: ((_l = (_k = element.additional) == null ? void 0 : _k.resolution) == null ? void 0 : _l.width) || 0,
           apiNamespace: itemApiNs,
           cacheKey,
-          passphrase: albumPassphrase || ""
+          passphrase: albumPassphrase || "",
+          album: albumName || ""
         });
       }
       itemOffset += 500;
@@ -407,7 +408,7 @@ async function getDsm7FolderItems(Helper, imageList) {
               PictureDate = synoTimestampToDate(element.time);
             }
             const cacheKey = ((_b = (_a = element.additional) == null ? void 0 : _a.thumbnail) == null ? void 0 : _b.cache_key) || "";
-            imageList.push({ path: String(element.id), url: "", info1: element.description || "", info2: "", info3: element.filename || "", date: PictureDate, x: ((_d = (_c = element.additional) == null ? void 0 : _c.resolution) == null ? void 0 : _d.height) || 0, y: ((_f = (_e = element.additional) == null ? void 0 : _e.resolution) == null ? void 0 : _f.width) || 0, apiNamespace: "SYNO.FotoTeam", cacheKey });
+            imageList.push({ path: String(element.id), url: "", info1: element.description || "", info2: "", info3: element.filename || "", date: PictureDate, x: ((_d = (_c = element.additional) == null ? void 0 : _c.resolution) == null ? void 0 : _d.height) || 0, y: ((_f = (_e = element.additional) == null ? void 0 : _e.resolution) == null ? void 0 : _f.width) || 0, apiNamespace: "SYNO.FotoTeam", cacheKey, album: synoFolder.name || "" });
           });
           synOffset = synOffset + 500;
         }
@@ -431,7 +432,7 @@ async function getDsm6Items(Helper, imageList) {
         if (element.info.takendate) {
           PictureDate = new Date(element.info.takendate);
         }
-        imageList.push({ path: element.id, url: "", info1: element.info.title, info2: element.info.description, info3: element.info.name, date: PictureDate, x: element.info.resolutionx, y: element.info.resolutiony, apiNamespace: "", cacheKey: "" });
+        imageList.push({ path: element.id, url: "", info1: element.info.title, info2: element.info.description, info3: element.info.name, date: PictureDate, x: element.info.resolutionx, y: element.info.resolutiony, apiNamespace: "", cacheKey: "", album: Helper.Adapter.config.syno_album || "" });
       });
       if (synResult.data["data"]["total"] === synResult.data["data"]["offset"]) {
         synEndOfFiles = true;

@@ -66,9 +66,9 @@ async function updatePictureList(Helper) {
         (fileInfo == null ? void 0 : fileInfo.info3) ? info3 = fileInfo == null ? void 0 : fileInfo.info3 : info3 = "";
         (fileInfo == null ? void 0 : fileInfo.date) ? date = fileInfo == null ? void 0 : fileInfo.date : date = null;
         if (Array.isArray(CurrentImages)) {
-          CurrentImages.push({ url: `/vis.0/slideshow/${file.file}`, path: file.file, info1, info2, info3, date });
+          CurrentImages.push({ url: `/vis.0/slideshow/${file.file}`, path: file.file, info1, info2, info3, date, album: "" });
         } else {
-          CurrentImages = [{ url: `/vis.0/slideshow/${file.file}`, path: file.file, info1, info2, info3, date }];
+          CurrentImages = [{ url: `/vis.0/slideshow/${file.file}`, path: file.file, info1, info2, info3, date, album: "" }];
         }
       }));
     }

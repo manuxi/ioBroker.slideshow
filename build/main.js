@@ -335,6 +335,19 @@ class Slideshow extends utils.Adapter {
           native: {}
         });
         await this.setStateAsync("info3", { val: CurrentPictureResult.info3, ack: true });
+        await this.setObjectNotExistsAsync("info_album", {
+          type: "state",
+          common: {
+            name: "info_album",
+            type: "string",
+            role: "text",
+            read: true,
+            write: false,
+            desc: "Album of picture"
+          },
+          native: {}
+        });
+        await this.setStateAsync("info_album", { val: CurrentPictureResult.album || "", ack: true });
         await this.setObjectNotExistsAsync("date", {
           type: "state",
           common: {

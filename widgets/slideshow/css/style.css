@@ -21,3 +21,22 @@
 .slideshowpicturehidden{
 	opacity: 0;
 }
+
+.slideshowpicture_bg{
+	height: 100%;
+	overflow: hidden;
+	object-fit: cover;
+	opacity: 1;
+	transform: scale(1.1);
+	filter: blur(20px);
+	position: absolute;
+	left: 0px;
+	right: 0px;
+	margin-left: auto;
+	margin-right: auto;
+	z-index: 0;
+}
+
+.slideshowpicture1_bg{
+	z-index: 0;
+}

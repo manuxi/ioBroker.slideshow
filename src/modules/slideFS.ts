@@ -10,7 +10,8 @@ export interface FSPicture{
 	info1: string,
 	info2: string,
 	info3: string,
-	date: Date | null
+	date: Date | null,
+	album: string
 }
 
 export interface FSPictureListUpdateResult{
@@ -81,16 +82,16 @@ export async function updatePictureList(Helper: GlobalHelper): Promise<FSPicture
 					if (ImageSize.width && ImageSize.height){
 						if ((Helper.Adapter.config.fs_format === 1 && ImageSize.width > ImageSize.height) === true){
 							if (Array.isArray(CurrentImages)){
-								CurrentImages.push( {path: CurrentImageList[ImageIndex], url: "", info1: "", info2: "", info3: "", date: null} );
+								CurrentImages.push( {path: CurrentImageList[ImageIndex], url: "", info1: "", info2: "", info3: "", date: null, album: path.basename(path.dirname(CurrentImageList[ImageIndex]))} );
 							}else{
-								CurrentImages = [ {path: CurrentImageList[ImageIndex], url: "", info1: "", info2: "", info3: "", date: null} ];
+								CurrentImages = [ {path: CurrentImageList[ImageIndex], url: "", info1: "", info2: "", info3: "", date: null, album: path.basename(path.dirname(CurrentImageList[ImageIndex]))} ];
 							}
 						}
 						if ((Helper.Adapter.config.fs_format === 2 && ImageSize.height > ImageSize.width) === true){
 							if (Array.isArray(CurrentImages)){
-								CurrentImages.push( {path: CurrentImageList[ImageIndex], url: "", info1: "", info2: "", info3: "", date: null} );
+								CurrentImages.push( {path: CurrentImageList[ImageIndex], url: "", info1: "", info2: "", info3: "", date: null, album: path.basename(path.dirname(CurrentImageList[ImageIndex]))} );
 							}else{
-								CurrentImages = [ {path: CurrentImageList[ImageIndex], url: "", info1: "", info2: "", info3: "", date: null} ];
+								CurrentImages = [ {path: CurrentImageList[ImageIndex], url: "", info1: "", info2: "", info3: "", date: null, album: path.basename(path.dirname(CurrentImageList[ImageIndex]))} ];
 							}
 						}
 					}
@@ -99,9 +100,9 @@ export async function updatePictureList(Helper: GlobalHelper): Promise<FSPicture
 				}
 			}else{
 				if (Array.isArray(CurrentImages)){
-					CurrentImages.push( {path: CurrentImageList[ImageIndex], url: "", info1: "", info2: "", info3: "", date: null} );
+					CurrentImages.push( {path: CurrentImageList[ImageIndex], url: "", info1: "", info2: "", info3: "", date: null, album: path.basename(path.dirname(CurrentImageList[ImageIndex]))} );
 				}else{
-					CurrentImages = [ {path: CurrentImageList[ImageIndex], url: "", info1: "", info2: "", info3: "", date: null} ];
+					CurrentImages = [ {path: CurrentImageList[ImageIndex], url: "", info1: "", info2: "", info3: "", date: null, album: path.basename(path.dirname(CurrentImageList[ImageIndex]))} ];
 				}
 			}
 		}

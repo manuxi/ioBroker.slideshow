@@ -120,6 +120,18 @@ $.extend(
 			"pl": "Wypełnij widżet obrazem",
 			"zh-cn": "用图片填充小部件"
 		},
+		"PictureBackgroundBlur": {
+			"en": "Blurred background",
+			"de": "Verschwommener Hintergrund",
+			"ru": "Размытый фон",
+			"pt": "Fundo da borrada",
+			"nl": "Wazige achtergrond",
+			"fr": "Fond flou",
+			"it": "Sfondo sfocato",
+			"es": "Fondo borroso",
+			"pl": "Rozmyte tło",
+			"zh-cn": "模糊背景"
+		},
 		"PictureFitWidget_tooltip": {
 			"en": "True = Picture fills widget, border of picture may be cut off\nFalse = Complete picture is shown, but widget may have empty zones",
 			"de": "True = Bild füllt das Widget, der Bildrand ist möglicherweise abgeschnitten \nFalse = Das vollständige Bild wird angezeigt, das Widget kann jedoch leere Zonen haben",
@@ -412,6 +424,12 @@ vis.binds["slideshow"] = {
 
 			if (data.Debug === true) { console.log(`Picture change occured for widget #${widgetID}`) };
 
+			if (data.PictureBackgroundBlur === false) {
+				$(`#${widgetID} .slideshowpicture_bg`).hide();
+			} else {
+				$(`#${widgetID} .slideshowpicture_bg`).show();
+			}
+
 			switch (data.SlideshowEffect) {
 				case "EffectFade":
 					$(`#${widgetID} .slideshowpicture1`).fadeOut(FadeTime, function () {
@@ -419,6 +437,13 @@ vis.binds["slideshow"] = {
 							$(`#${widgetID} .slideshowpicture1`).fadeIn(FadeTime);
 						});
 					});
+					if (data.PictureBackgroundBlur === true) {
+						$(`#${widgetID} .slideshowpicture1_bg`).fadeOut(FadeTime, function () {
+							$(`#${widgetID} .slideshowpicture1_bg`).attr("src", img.src).load(function () {
+								$(`#${widgetID} .slideshowpicture1_bg`).fadeIn(FadeTime);
+							});
+						});
+					}
 					break;
 				case "EffectTransition":
 					if (data.Debug === true) { console.log("Load new picture in hidden img") };
@@ -427,11 +452,22 @@ vis.binds["slideshow"] = {
 						if ($(this)[0].classList.contains("slideshowpicture1")) {
 							$(`#${widgetID} .slideshowpicture2`).addClass("slideshowpicturehidden");
 							$(`#${widgetID} .slideshowpicture1`).removeClass("slideshowpicturehidden");
+							if (data.PictureBackgroundBlur === true) {
+								$(`#${widgetID} .slideshowpicture2_bg`).addClass("slideshowpicturehidden");
+								$(`#${widgetID} .slideshowpicture1_bg`).removeClass("slideshowpicturehidden");
+							}
 						} else {
 							$(`#${widgetID} .slideshowpicture1`).addClass("slideshowpicturehidden");
 							$(`#${widgetID} .slideshowpicture2`).removeClass("slideshowpicturehidden");
+							if (data.PictureBackgroundBlur === true) {
+								$(`#${widgetID} .slideshowpicture1_bg`).addClass("slideshowpicturehidden");
+								$(`#${widgetID} .slideshowpicture2_bg`).removeClass("slideshowpicturehidden");
+							}
 						}
 					}).attr("src", img.src);
+					if (data.PictureBackgroundBlur === true) {
+						$(`#${widgetID} .slideshowpicture_bg.slideshowpicturehidden`).attr("src", img.src);
+					}
 					break;
 				case "EffectJQuery":
 					console.log(`Starting effect ${data.EffectJQuery}`)
@@ -439,14 +475,27 @@ vis.binds["slideshow"] = {
 						$(`#${widgetID} .slideshowpicture2`).attr("src", img.src);
 						$(`#${widgetID} .slideshowpicture2`).css("z-index", 2);
 						$(`#${widgetID} .slideshowpicture2`).show(data.EffectJQuery, data.EffectTransitionStyle, FadeTime, function () { $(`#${widgetID} .slideshowpicture1`).css("display", "none"); })
+						if (data.PictureBackgroundBlur === true) {
+							$(`#${widgetID} .slideshowpicture2_bg`).attr("src", img.src);
+							$(`#${widgetID} .slideshowpicture2_bg`).css("z-index", 0);
+							$(`#${widgetID} .slideshowpicture2_bg`).show(data.EffectJQuery, data.EffectTransitionStyle, FadeTime, function () { $(`#${widgetID} .slideshowpicture1_bg`).css("display", "none"); })
+						}
 					} else {
 						$(`#${widgetID} .slideshowpicture1`).attr("src", img.src);
 						$(`#${widgetID} .slideshowpicture2`).css("z-index", 0);
 						$(`#${widgetID} .slideshowpicture1`).show(data.EffectJQuery, data.EffectTransitionStyle, FadeTime, function () { $(`#${widgetID} .slideshowpicture2`).css("display", "none"); })
+						if (data.PictureBackgroundBlur === true) {
+							$(`#${widgetID} .slideshowpicture1_bg`).attr("src", img.src);
+							$(`#${widgetID} .slideshowpicture1_bg`).css("z-index", 0);
+							$(`#${widgetID} .slideshowpicture1_bg`).show(data.EffectJQuery, data.EffectTransitionStyle, FadeTime, function () { $(`#${widgetID} .slideshowpicture2_bg`).css("display", "none"); })
+						}
 					}
 					break;
 				default:
 					$(`#${widgetID} .slideshowpicture1`).attr("src", img.src);
+					if (data.PictureBackgroundBlur === true) {
+						$(`#${widgetID} .slideshowpicture1_bg`).attr("src", img.src);
+					}
 					break;
 			}
 
@@ -499,9 +548,11 @@ vis.binds["slideshow"] = {
 		}
 		if (data.SlideshowEffect === "EffectFade") {
 			$(`#${widgetID} .slideshowpicture2`).css("display", "none");
+			$(`#${widgetID} .slideshowpicture2_bg`).css("display", "none");
 		}
 		if (data.SlideshowEffect === "EffectTransition") {
 			$(`#${widgetID} .slideshowpicture2`).addClass("slideshowpicturehidden");
+			$(`#${widgetID} .slideshowpicture2_bg`).addClass("slideshowpicturehidden");
 			$(`#${widgetID} .slideshowpicturehidden`).css("transition-property", "opacity");
 			$(`#${widgetID} .slideshowpicturehidden`).css("transition-duration", FadeTime + "ms");
 			$(`#${widgetID} .slideshowpicturehidden`).css("transition-timing-function", data.EffectTransitionStyle);
@@ -510,9 +561,15 @@ vis.binds["slideshow"] = {
 			$(`#${widgetID} .slideshowpicture`).css("transition-duration", FadeTime + "ms")
 			$(`#${widgetID} .slideshowpicture`).css("transition-timing-function", data.EffectTransitionStyle);
 			$(`#${widgetID} .slideshowpicture`).css("transition-delay", "0s");
+			
+			$(`#${widgetID} .slideshowpicture_bg`).css("transition-property", "opacity");
+			$(`#${widgetID} .slideshowpicture_bg`).css("transition-duration", FadeTime + "ms")
+			$(`#${widgetID} .slideshowpicture_bg`).css("transition-timing-function", data.EffectTransitionStyle);
+			$(`#${widgetID} .slideshowpicture_bg`).css("transition-delay", "0s");
 		}
 		if (data.SlideshowEffect === "EffectJQuery") {
 			$(`#${widgetID} .slideshowpicture2`).css("display", "none");
+			$(`#${widgetID} .slideshowpicture2_bg`).css("display", "none");
 		}
 	}
 };
