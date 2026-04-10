@@ -188,7 +188,7 @@ async function updatePictureList(Helper) {
   }
 }
 async function getDsm7AlbumItems(Helper, albumName, imageList) {
-  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v;
   const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
   const apiUrl = `${baseUrl}/photo/webapi/entry.cgi`;
   for (const apiNs of ["SYNO.FotoTeam", "SYNO.Foto"]) {
@@ -274,7 +274,97 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
     }
     return;
   }
-  Helper.ReportingError(null, `Album "${albumName}" not found in Shared Space or Personal Space`, "Synology", "getDsm7AlbumItems", "", false);
+  Helper.ReportingInfo("Debug", "Synology", `Searching for album "${albumName}" in Shared-with-me albums`);
+  let sharedAlbumId = null;
+  let sharedPassphrase = "";
+  let sharedOffset = 0;
+  while (sharedAlbumId === null) {
+    let synResult;
+    try {
+      synResult = await synoConnection.get(apiUrl, {
+        params: {
+          api: "SYNO.Foto.Sharing.Misc",
+          method: "list_shared_with_me",
+          version: 1,
+          offset: sharedOffset,
+          limit: 100,
+          SynoToken: synoToken
+        }
+      });
+    } catch (err) {
+      Helper.ReportingInfo("Debug", "Synology", `Could not list shared-with-me albums: ${err.message}`);
+      break;
+    }
+    if (((_k = synResult.data) == null ? void 0 : _k.success) !== true || !Array.isArray((_m = (_l = synResult.data) == null ? void 0 : _l.data) == null ? void 0 : _m.list)) {
+      Helper.ReportingInfo("Debug", "Synology", `No shared-with-me albums accessible: ${JSON.stringify(synResult.data)}`);
+      break;
+    }
+    const sharedAlbums = synResult.data.data.list;
+    if (sharedAlbums.length === 0)
+      break;
+    const albumNames = sharedAlbums.map((a) => {
+      var _a2;
+      return ((_a2 = a.album) == null ? void 0 : _a2.name) || a.name || "?";
+    }).join(", ");
+    Helper.ReportingInfo("Debug", "Synology", `Shared-with-me: found ${sharedAlbums.length} albums at offset ${sharedOffset}: ${albumNames}`);
+    for (const entry of sharedAlbums) {
+      const name = ((_n = entry.album) == null ? void 0 : _n.name) || entry.name;
+      if (name === albumName) {
+        sharedAlbumId = ((_o = entry.album) == null ? void 0 : _o.id) || entry.id;
+        sharedPassphrase = entry.passphrase || "";
+        Helper.ReportingInfo("Info", "Synology", `Found album "${albumName}" (ID: ${sharedAlbumId}) in Shared-with-me`);
+        break;
+      }
+    }
+    sharedOffset += 100;
+  }
+  if (sharedAlbumId !== null) {
+    let itemOffset = 0;
+    while (true) {
+      const params = {
+        api: "SYNO.Foto.Browse.Item",
+        method: "list",
+        version: 1,
+        album_id: sharedAlbumId,
+        offset: itemOffset,
+        limit: 500,
+        additional: JSON.stringify(["description", "resolution", "orientation", "tag"]),
+        SynoToken: synoToken
+      };
+      if (sharedPassphrase) {
+        params.passphrase = sharedPassphrase;
+      }
+      const synResult = await synoConnection.get(apiUrl, { params });
+      if (((_p = synResult.data) == null ? void 0 : _p.success) !== true || !Array.isArray((_r = (_q = synResult.data) == null ? void 0 : _q.data) == null ? void 0 : _r.list)) {
+        Helper.ReportingError(null, `Error getting pictures from shared album "${albumName}"`, "Synology", "getDsm7AlbumItems/Shared", JSON.stringify(synResult.data), false);
+        return;
+      }
+      const items = synResult.data.data.list;
+      if (items.length === 0)
+        break;
+      Helper.ReportingInfo("Debug", "Synology", `Shared album "${albumName}": ${items.length} items at offset ${itemOffset}`);
+      for (const element of items) {
+        let PictureDate = null;
+        if (element.time) {
+          PictureDate = synoTimestampToDate(element.time);
+        }
+        imageList.push({
+          path: String(element.id),
+          url: "",
+          info1: element.description || "",
+          info2: "",
+          info3: element.filename || "",
+          date: PictureDate,
+          x: ((_t = (_s = element.additional) == null ? void 0 : _s.resolution) == null ? void 0 : _t.height) || 0,
+          y: ((_v = (_u = element.additional) == null ? void 0 : _u.resolution) == null ? void 0 : _v.width) || 0,
+          apiNamespace: "SYNO.Foto"
+        });
+      }
+      itemOffset += 500;
+    }
+    return;
+  }
+  Helper.ReportingError(null, `Album "${albumName}" not found in Shared Space, Personal Space, or Shared-with-me`, "Synology", "getDsm7AlbumItems", "", false);
 }
 async function getDsm7FolderItems(Helper, imageList) {
   const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
