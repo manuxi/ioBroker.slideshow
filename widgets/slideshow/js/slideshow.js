@@ -347,6 +347,38 @@ $.extend(
 			"es": "Inicio automático de la presentación de diapositivas",
 			"pl": "Rozpoczęcie automatycznego pokazu slajdów",
 			"zh-cn": "自动幻灯片播放开始"
+		},
+		"group_display": {
+			"en": "Display",
+			"de": "Darstellung"
+		},
+		"PictureFitMode": {
+			"en": "Fit mode",
+			"de": "Anzeigemodus"
+		},
+		"PictureFitMode_tooltip": {
+			"en": "contain = show whole image (letterbox), cover = fill container and crop overflow, smart = landscape uses cover+zoom, portrait uses contain",
+			"de": "contain = ganzes Bild zeigen (Letterbox), cover = Container füllen und Überhang abschneiden, smart = Querformat nutzt cover+Zoom, Hochformat nutzt contain"
+		},
+		"contain": {
+			"en": "contain",
+			"de": "contain"
+		},
+		"cover": {
+			"en": "cover",
+			"de": "cover"
+		},
+		"smart": {
+			"en": "smart (per orientation)",
+			"de": "smart (je nach Format)"
+		},
+		"PictureZoomFactor": {
+			"en": "Zoom factor",
+			"de": "Zoomfaktor"
+		},
+		"PictureZoomFactor_tooltip": {
+			"en": "Additional scale factor applied in cover/smart mode for landscape images (1.0 = no extra zoom)",
+			"de": "Zusätzlicher Skalierungsfaktor für Querformat-Bilder in cover/smart-Modus (1.0 = kein zusätzlicher Zoom)"
 		}
 	}
 );
@@ -517,23 +549,38 @@ vis.binds["slideshow"] = {
 		})
 
 		function SlideShowFitImage(image, widgetID) {
-			if (data.PictureFitWidget === false) {
-				$(`#${widgetID} .slideshowpicture`).css("object-fit", "contain");
+			// Determine effective fit mode with backward-compatibility fallback
+			let mode = data.PictureFitMode;
+			if (!mode) {
+				mode = data.PictureFitWidget === true ? "cover" : "contain";
+			}
+			const zoom = parseFloat(data.PictureZoomFactor) || 1.0;
+			const isLandscape = image.naturalWidth > image.naturalHeight;
+
+			let effectiveFit;
+			let effectiveScale = 1.0;
+			if (mode === "contain") {
+				effectiveFit = "contain";
+			} else if (mode === "cover") {
+				effectiveFit = "cover";
+				effectiveScale = zoom;
 			} else {
-				const imgFormat = image.naturalWidth / image.naturalHeight;
-				if (imgFormat > 1) {
-					// image is landscape
-					image.style.width = '100%';
-					image.style.maxHeight = '100%';
-				} else if (imgFormat < 1) {
-					// image is portrait
-					image.style.width = '100%';
-					image.style.maxHeight = '100%';
+				// smart: landscape -> cover + zoom, portrait/square -> contain
+				if (isLandscape) {
+					effectiveFit = "cover";
+					effectiveScale = zoom;
 				} else {
-					// image is square
-					image.style.Width = '100%';
-					image.style.maxHeight = '100%';
+					effectiveFit = "contain";
 				}
+			}
+
+			image.style.width = "100%";
+			image.style.height = "100%";
+			image.style.maxHeight = "";
+			image.style.objectFit = effectiveFit;
+			image.style.transform = effectiveScale !== 1.0 ? `scale(${effectiveScale})` : "";
+			if (data.Debug === true) {
+				console.log(`SlideShowFitImage: mode=${mode} fit=${effectiveFit} scale=${effectiveScale} landscape=${isLandscape}`);
 			}
 		}
 
@@ -541,6 +588,11 @@ vis.binds["slideshow"] = {
 			setTimeout(function () {
 				vis.binds["slideshow"].updateSlideshowEffect();
 			}, 100);
+		}
+
+		// Initial blur background visibility
+		if (data.PictureBackgroundBlur === false) {
+			$(`#${widgetID} .slideshowpicture_bg`).hide();
 		}
 
 		if (data.oid) {
