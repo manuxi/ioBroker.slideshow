@@ -415,6 +415,13 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 	// Different API variants that might work for "shared with me" albums
 	// The correct one depends on Synology Photos version
 	const sharedApiVariants = [
+		// Try NormalAlbum API (user-created albums)
+		{ api: "SYNO.Foto.Browse.NormalAlbum", method: "list", version: 1, extra: {} },
+		{ api: "SYNO.Foto.Browse.NormalAlbum", method: "list", version: 2, extra: {} },
+		// Try PublicSharing API (publicly shared albums)
+		{ api: "SYNO.Foto.PublicSharing", method: "list", version: 1, extra: {} },
+		// Try ConditionAlbum (correct name - not CondAlbum)
+		{ api: "SYNO.Foto.Browse.ConditionAlbum", method: "list", version: 1, extra: {} },
 		// Try getting shared albums via Sharing.Passphrase (how shared albums actually work)
 		{ api: "SYNO.Foto.Sharing.Passphrase", method: "list", version: 1, extra: {} },
 		// Sharing misc API
@@ -422,15 +429,8 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 		{ api: "SYNO.Foto.Sharing.Misc", method: "list", version: 1, extra: {} },
 		// Browse.Album with shared filter
 		{ api: "SYNO.Foto.Browse.Album", method: "list", version: 2, extra: { category: "shared_with_me" } },
-		{ api: "SYNO.Foto.Browse.Album", method: "list", version: 1, extra: { category: "shared_with_me" } },
-		// Some versions use this method name
-		{ api: "SYNO.Foto.Browse.Album", method: "list_shared_with_me", version: 2, extra: {} },
-		{ api: "SYNO.Foto.Browse.Album", method: "list_shared_with_me", version: 1, extra: {} },
-		// Try CondAlbum (conditional albums - might include shared)
-		{ api: "SYNO.Foto.Browse.CondAlbum", method: "list", version: 1, extra: {} },
 		// Try without category filter (list all albums user can access)
 		{ api: "SYNO.Foto.Browse.Album", method: "list", version: 2, extra: {} },
-		{ api: "SYNO.Foto.Browse.Album", method: "list", version: 1, extra: {} },
 	];
 
 	for (const variant of sharedApiVariants) {
