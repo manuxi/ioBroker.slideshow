@@ -260,18 +260,22 @@ async function discoverPhotoApiUrl(Helper: GlobalHelper, baseUrl: string): Promi
 	for (const url of endpoints) {
 		try {
 			Helper.ReportingInfo("Debug", "Synology", `Trying Photo API at ${url}`);
+			// Query ALL available APIs to see what's there
 			const result = await synoConnection.get<any>(url, {
 				params: {
 					api: "SYNO.API.Info",
 					method: "query",
 					version: 1,
-					query: "SYNO.Foto,SYNO.FotoTeam",
+					query: "all",
 					SynoToken: synoToken
 				}
 			});
 			if (result.data?.success === true) {
-				const apis = Object.keys(result.data.data || {}).sort();
-				Helper.ReportingInfo("Info", "Synology", `Photo API found at ${url} (${apis.length} APIs: ${apis.slice(0, 10).join(", ")}${apis.length > 10 ? "..." : ""})`);
+				const allApis = Object.keys(result.data.data || {}).sort();
+				// Filter for Photo-related APIs
+				const photoApis = allApis.filter(a => a.includes("Foto") || a.includes("Photo") || a.includes("Sharing"));
+				Helper.ReportingInfo("Info", "Synology", `Photo API found at ${url}`);
+				Helper.ReportingInfo("Debug", "Synology", `Available Photo APIs (${photoApis.length}): ${photoApis.join(", ")}`);
 				cachedPhotoApiUrl = url;
 				return url;
 			}
@@ -411,17 +415,22 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 	// Different API variants that might work for "shared with me" albums
 	// The correct one depends on Synology Photos version
 	const sharedApiVariants = [
-		// Most common: list with shared_with_me category
+		// Try getting shared albums via Sharing.Passphrase (how shared albums actually work)
+		{ api: "SYNO.Foto.Sharing.Passphrase", method: "list", version: 1, extra: {} },
+		// Sharing misc API
+		{ api: "SYNO.Foto.Sharing.Misc", method: "list_shared_with_me", version: 1, extra: {} },
+		{ api: "SYNO.Foto.Sharing.Misc", method: "list", version: 1, extra: {} },
+		// Browse.Album with shared filter
 		{ api: "SYNO.Foto.Browse.Album", method: "list", version: 2, extra: { category: "shared_with_me" } },
-		// Alternative: list all and filter by shared flag
 		{ api: "SYNO.Foto.Browse.Album", method: "list", version: 1, extra: { category: "shared_with_me" } },
 		// Some versions use this method name
 		{ api: "SYNO.Foto.Browse.Album", method: "list_shared_with_me", version: 2, extra: {} },
 		{ api: "SYNO.Foto.Browse.Album", method: "list_shared_with_me", version: 1, extra: {} },
-		// Sharing API
-		{ api: "SYNO.Foto.Sharing.Misc", method: "list_shared_with_me", version: 1, extra: {} },
+		// Try CondAlbum (conditional albums - might include shared)
+		{ api: "SYNO.Foto.Browse.CondAlbum", method: "list", version: 1, extra: {} },
 		// Try without category filter (list all albums user can access)
 		{ api: "SYNO.Foto.Browse.Album", method: "list", version: 2, extra: {} },
+		{ api: "SYNO.Foto.Browse.Album", method: "list", version: 1, extra: {} },
 	];
 
 	for (const variant of sharedApiVariants) {
