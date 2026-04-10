@@ -418,6 +418,9 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 				additional: JSON.stringify(["description", "resolution", "orientation", "tag", "thumbnail"]),
 				SynoToken: synoToken
 			};
+			if (albumPassphrase) {
+				params.passphrase = albumPassphrase;
+			}
 
 			const synResult = await synoConnection.get<any>(apiUrl, { params });
 
