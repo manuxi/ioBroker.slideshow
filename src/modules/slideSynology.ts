@@ -418,14 +418,11 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 				additional: JSON.stringify(["description", "resolution", "orientation", "tag", "thumbnail"]),
 				SynoToken: synoToken
 			};
-			if (albumPassphrase) {
-				params.passphrase = albumPassphrase;
-			}
 
 			const synResult = await synoConnection.get<any>(apiUrl, { params });
 
 			if (synResult.data?.success !== true || !Array.isArray(synResult.data?.data?.list)) {
-				Helper.ReportingError(null, `Error getting pictures from album "${albumName}"`, "Synology", "getDsm7AlbumItems", JSON.stringify(synResult.data), false);
+				Helper.ReportingError(null, `Error getting pictures from album "${albumName}". Synology returned: ${JSON.stringify(synResult.data)}`, "Synology", "getDsm7AlbumItems", "", false);
 				return;
 			}
 

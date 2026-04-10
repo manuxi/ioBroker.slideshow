@@ -338,12 +338,9 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
         additional: JSON.stringify(["description", "resolution", "orientation", "tag", "thumbnail"]),
         SynoToken: synoToken
       };
-      if (albumPassphrase) {
-        params.passphrase = albumPassphrase;
-      }
       const synResult = await synoConnection.get(apiUrl, { params });
       if (((_d = synResult.data) == null ? void 0 : _d.success) !== true || !Array.isArray((_f = (_e = synResult.data) == null ? void 0 : _e.data) == null ? void 0 : _f.list)) {
-        Helper.ReportingError(null, `Error getting pictures from album "${albumName}"`, "Synology", "getDsm7AlbumItems", JSON.stringify(synResult.data), false);
+        Helper.ReportingError(null, `Error getting pictures from album "${albumName}". Synology returned: ${JSON.stringify(synResult.data)}`, "Synology", "getDsm7AlbumItems", "", false);
         return;
       }
       const items = synResult.data.data.list;
