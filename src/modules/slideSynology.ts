@@ -106,7 +106,7 @@ export async function getPicturePrefetch(Helper: GlobalHelper): Promise<void> {
 		if (Helper.Adapter.config.syno_version === 0){
 			// DSM 7 — Synology Photos
 			const apiNs = CurrentImage.apiNamespace || "SYNO.FotoTeam";
-			synURL = `${baseUrl}/photo/webapi/entry.cgi?api=${apiNs}.Download&method=download&version=1&unit_id=%5B${CurrentImage.path}%5D&force_download=true&SynoToken=${synoToken}`;
+			synURL = `${baseUrl}/webapi/entry.cgi?api=${apiNs}.Download&method=download&version=1&unit_id=%5B${CurrentImage.path}%5D&force_download=true&SynoToken=${synoToken}`;
 		} else {
 			// DSM 6 — PhotoStation
 			synURL = `${baseUrl}/photo/webapi/download.php?api=SYNO.PhotoStation.Download&method=getphoto&version=1&id=${CurrentImage.path}&download=true`;
@@ -226,7 +226,7 @@ export async function updatePictureList(Helper: GlobalHelper): Promise<SynoPictu
  */
 async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageList: SynoPicture[]): Promise<void> {
 	const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
-	const apiUrl = `${baseUrl}/photo/webapi/entry.cgi`;
+	const apiUrl = `${baseUrl}/webapi/entry.cgi`;
 
 	// Search for the album in shared space first, then personal space
 	for (const apiNs of ["SYNO.FotoTeam", "SYNO.Foto"]) {
@@ -462,7 +462,7 @@ async function getDsm7FolderItems(Helper: GlobalHelper, imageList: SynoPicture[]
 		let synEndOfFiles = false;
 		let synOffset = 0;
 		while (synEndOfFiles === false){
-			const synURL = `${baseUrl}/photo/webapi/entry.cgi?api=SYNO.FotoTeam.Browse.Item&method=list&version=1&limit=500&item_type=%5B0%5D&additional=%5B%22description%22%2C%22orientation%22%2C%22tag%22%2C%22resolution%22%5D&offset=${synOffset}&SynoToken=${synoToken}&folder_id=${synoFolder.id}`;
+			const synURL = `${baseUrl}/webapi/entry.cgi?api=SYNO.FotoTeam.Browse.Item&method=list&version=1&limit=500&item_type=%5B0%5D&additional=%5B%22description%22%2C%22orientation%22%2C%22tag%22%2C%22resolution%22%5D&offset=${synOffset}&SynoToken=${synoToken}&folder_id=${synoFolder.id}`;
 			const synResult = await (synoConnection.get<any>(synURL));
 			if (synResult.data["success"] === true && Array.isArray(synResult.data["data"]["list"])){
 				if (synResult.data["data"]["list"].length === 0){
@@ -611,7 +611,7 @@ async function synoCheckConnection(Helper: GlobalHelper): Promise<boolean>{
 		const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
 		if (Helper.Adapter.config.syno_version === 0){
 			// DSM 7 — verify session by listing root folder
-			const synResult = await synoConnection.get<any>(`${baseUrl}/photo/webapi/entry.cgi`, {
+			const synResult = await synoConnection.get<any>(`${baseUrl}/webapi/entry.cgi`, {
 				params: {
 					api: "SYNO.FotoTeam.Browse.Folder",
 					method: "list",
@@ -666,7 +666,7 @@ async function synoGetFolders(Helper: GlobalHelper, FolderID: number): Promise<b
 		let synoEndOfFolders = false;
 		let synoOffset = 0;
 		while (synoEndOfFolders === false){
-			const synoURL = `${baseUrl}/photo/webapi/entry.cgi?api=SYNO.FotoTeam.Browse.Folder&method=list&version=1&id=${FolderID}&limit=500&offset=${synoOffset}&SynoToken=${synoToken}`;
+			const synoURL = `${baseUrl}/webapi/entry.cgi?api=SYNO.FotoTeam.Browse.Folder&method=list&version=1&id=${FolderID}&limit=500&offset=${synoOffset}&SynoToken=${synoToken}`;
 			Helper.ReportingInfo("Debug", "Synology", `Iterating folder id ${FolderID} `, {URL: synoURL} );
 			const synResult = await (synoConnection.get<any>(synoURL));
 			Helper.ReportingInfo("Debug", "Synology", `Result iterating folder id ${FolderID}`, {JSON: JSON.stringify(synResult.data)} );
