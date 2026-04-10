@@ -207,26 +207,36 @@ async function discoverPhotoApiUrl(Helper, baseUrl) {
   var _a, _b;
   if (cachedPhotoApiUrl)
     return cachedPhotoApiUrl;
-  const url = `${baseUrl}/photo/webapi/entry.cgi`;
-  try {
-    const result = await synoConnection.get(url, {
-      params: {
-        api: "SYNO.API.Info",
-        method: "query",
-        version: 1,
-        query: "SYNO.Foto,SYNO.FotoTeam"
+  const endpoints = [
+    `${baseUrl}/webapi/entry.cgi`,
+    // Works on many DSM 7 setups
+    `${baseUrl}/photo/webapi/entry.cgi`
+    // Alternative path
+  ];
+  for (const url of endpoints) {
+    try {
+      Helper.ReportingInfo("Debug", "Synology", `Trying Photo API at ${url}`);
+      const result = await synoConnection.get(url, {
+        params: {
+          api: "SYNO.API.Info",
+          method: "query",
+          version: 1,
+          query: "SYNO.Foto,SYNO.FotoTeam",
+          SynoToken: synoToken
+        }
+      });
+      if (((_a = result.data) == null ? void 0 : _a.success) === true) {
+        const apis = Object.keys(result.data.data || {}).sort();
+        Helper.ReportingInfo("Info", "Synology", `Photo API found at ${url} (${apis.length} APIs: ${apis.slice(0, 10).join(", ")}${apis.length > 10 ? "..." : ""})`);
+        cachedPhotoApiUrl = url;
+        return url;
       }
-    });
-    if (((_a = result.data) == null ? void 0 : _a.success) === true) {
-      const apis = Object.keys(result.data.data || {}).sort();
-      Helper.ReportingInfo("Info", "Synology", `Photo API available (${apis.length} APIs: ${apis.slice(0, 15).join(", ")}${apis.length > 15 ? "..." : ""})`);
-      cachedPhotoApiUrl = url;
-      return url;
+      Helper.ReportingInfo("Debug", "Synology", `Photo API query at ${url} failed: ${JSON.stringify(result.data)}`);
+    } catch (err) {
+      Helper.ReportingInfo("Debug", "Synology", `Cannot reach Photo API at ${url}: ${((_b = err.response) == null ? void 0 : _b.status) || err.message}`);
     }
-    Helper.ReportingInfo("Debug", "Synology", `Photo API query failed: ${JSON.stringify(result.data)}`);
-  } catch (err) {
-    Helper.Adapter.log.error(`Cannot reach Synology Photos API at ${url}: ${((_b = err.response) == null ? void 0 : _b.status) || err.message}`);
   }
+  Helper.Adapter.log.error(`Could not find Synology Photos API endpoint. Tried: ${endpoints.join(", ")}`);
   return null;
 }
 async function getDsm7AlbumItems(Helper, albumName, imageList) {
