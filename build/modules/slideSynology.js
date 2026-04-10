@@ -257,8 +257,8 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
     },
     {
       label: "Shared-with-me albums",
-      api: "SYNO.Foto.Browse.Album",
-      extraParams: { category: "shared_with_me" }
+      api: "SYNO.Foto.Sharing.Misc",
+      extraParams: { method: "list_shared_with_me_album", version: 1 }
     },
     {
       label: "Shared Space (Team)",
