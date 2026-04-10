@@ -109,6 +109,9 @@ async function getPicturePrefetch(Helper) {
       } else {
         synURL = `${photoApiUrl}?api=${apiNs}.Download&method=download&version=1&unit_id=%5B${CurrentImage.path}%5D&force_download=true&SynoToken=${synoToken}`;
       }
+      if (CurrentImage.passphrase) {
+        synURL += `&passphrase=${encodeURIComponent(CurrentImage.passphrase)}`;
+      }
     } else {
       synURL = `${baseUrl}/photo/webapi/download.php?api=SYNO.PhotoStation.Download&method=getphoto&version=1&id=${CurrentImage.path}&download=true`;
     }
@@ -367,7 +370,8 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
           x: ((_j = (_i = element.additional) == null ? void 0 : _i.resolution) == null ? void 0 : _j.height) || 0,
           y: ((_l = (_k = element.additional) == null ? void 0 : _k.resolution) == null ? void 0 : _l.width) || 0,
           apiNamespace: itemApiNs,
-          cacheKey
+          cacheKey,
+          passphrase: albumPassphrase || ""
         });
       }
       itemOffset += 500;

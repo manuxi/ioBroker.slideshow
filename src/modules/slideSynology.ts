@@ -16,6 +16,7 @@ export interface SynoPicture {
 	y: number,
 	apiNamespace: string,
 	cacheKey: string,
+	passphrase?: string,
 }
 
 export interface SynoPictureListUpdateResult {
@@ -126,6 +127,9 @@ export async function getPicturePrefetch(Helper: GlobalHelper): Promise<void> {
 			} else {
 				// Fallback to download API without cache_key
 				synURL = `${photoApiUrl}?api=${apiNs}.Download&method=download&version=1&unit_id=%5B${CurrentImage.path}%5D&force_download=true&SynoToken=${synoToken}`;
+			}
+			if (CurrentImage.passphrase) {
+				synURL += `&passphrase=${encodeURIComponent(CurrentImage.passphrase)}`;
 			}
 		} else {
 			// DSM 6 — PhotoStation
@@ -454,7 +458,8 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 					x: element.additional?.resolution?.height || 0,
 					y: element.additional?.resolution?.width || 0,
 					apiNamespace: itemApiNs,
-					cacheKey: cacheKey
+					cacheKey: cacheKey,
+					passphrase: albumPassphrase || ""
 				});
 			}
 
