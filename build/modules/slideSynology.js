@@ -36,18 +36,14 @@ module.exports = __toCommonJS(slideSynology_exports);
 var import_axios = __toESM(require("axios"));
 var import_axios_cookiejar_support = require("axios-cookiejar-support");
 var import_tough_cookie = require("tough-cookie");
-var https = __toESM(require("https"));
 var path = __toESM(require("path"));
 const synoFolders = [];
 let synoConnectionState = false;
 let synoToken = "";
 const AxiosJar = new import_tough_cookie.CookieJar();
-const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 const synoConnection = (0, import_axios_cookiejar_support.wrapper)(import_axios.default.create({
   withCredentials: true,
   jar: AxiosJar,
-  httpsAgent,
-  // Timeout for requests
   timeout: 3e4
 }));
 synoConnection.interceptors.request.use((config) => {

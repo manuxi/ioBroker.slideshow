@@ -2,7 +2,6 @@ import { GlobalHelper } from "./global-helper";
 import axios, { AxiosError } from "axios";
 import { wrapper } from "axios-cookiejar-support"
 import { CookieJar } from "tough-cookie";
-import * as https from "https";
 
 import * as path from "path";
 
@@ -38,14 +37,10 @@ let synoConnectionState  = false;
 let synoToken = "";
 // Authentication Cookie
 const AxiosJar = new CookieJar();
-// HTTPS agent that accepts self-signed certificates (common for Synology NAS)
-const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 // Axios instance with options
 const synoConnection = wrapper(axios.create({
 	withCredentials: true,
 	jar: AxiosJar,
-	httpsAgent: httpsAgent,
-	// Timeout for requests
 	timeout: 30000
 }));
 // Add CSRF token header to every request (required by Synology Photos)
