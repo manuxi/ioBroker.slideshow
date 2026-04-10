@@ -156,26 +156,14 @@ async function updatePictureList(Helper) {
       const ext = path.extname(element.info3).toLowerCase();
       return ext === ".jpg" || ext === ".jpeg" || ext === ".png";
     });
-    if (Helper.Adapter.config.syno_format > 0) {
-      CurrentImageListFilter1.filter(function(element) {
-        if ((Helper.Adapter.config.syno_format === 1 && element.x > element.y) === true) {
-          if (Array.isArray(CurrentImages)) {
-            CurrentImages.push(element);
-          } else {
-            CurrentImages = [element];
-          }
-        }
-        if ((Helper.Adapter.config.syno_format === 2 && element.y > element.x) === true) {
-          if (Array.isArray(CurrentImages)) {
-            CurrentImages.push(element);
-          } else {
-            CurrentImages = [element];
-          }
-        }
-      });
+    if (Helper.Adapter.config.syno_format === 1) {
+      CurrentImages = CurrentImageListFilter1.filter((element) => element.x > element.y);
+    } else if (Helper.Adapter.config.syno_format === 2) {
+      CurrentImages = CurrentImageListFilter1.filter((element) => element.y > element.x);
     } else {
       CurrentImages = CurrentImageListFilter1;
     }
+    Helper.ReportingInfo("Debug", "Synology", `${CurrentImages.length} pictures after orientation filter (syno_format=${Helper.Adapter.config.syno_format})`);
     switch (Helper.Adapter.config.syno_order) {
       case 0:
         CurrentImages = await sortByKey(CurrentImages, "date");
@@ -367,8 +355,8 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
           info2: "",
           info3: element.filename || "",
           date: PictureDate,
-          x: ((_j = (_i = element.additional) == null ? void 0 : _i.resolution) == null ? void 0 : _j.height) || 0,
-          y: ((_l = (_k = element.additional) == null ? void 0 : _k.resolution) == null ? void 0 : _l.width) || 0,
+          x: ((_j = (_i = element.additional) == null ? void 0 : _i.resolution) == null ? void 0 : _j.width) || 0,
+          y: ((_l = (_k = element.additional) == null ? void 0 : _k.resolution) == null ? void 0 : _l.height) || 0,
           apiNamespace: itemApiNs,
           cacheKey,
           passphrase: albumPassphrase || "",
@@ -408,7 +396,7 @@ async function getDsm7FolderItems(Helper, imageList) {
               PictureDate = synoTimestampToDate(element.time);
             }
             const cacheKey = ((_b = (_a = element.additional) == null ? void 0 : _a.thumbnail) == null ? void 0 : _b.cache_key) || "";
-            imageList.push({ path: String(element.id), url: "", info1: element.description || "", info2: "", info3: element.filename || "", date: PictureDate, x: ((_d = (_c = element.additional) == null ? void 0 : _c.resolution) == null ? void 0 : _d.height) || 0, y: ((_f = (_e = element.additional) == null ? void 0 : _e.resolution) == null ? void 0 : _f.width) || 0, apiNamespace: "SYNO.FotoTeam", cacheKey, album: synoFolder.name || "" });
+            imageList.push({ path: String(element.id), url: "", info1: element.description || "", info2: "", info3: element.filename || "", date: PictureDate, x: ((_d = (_c = element.additional) == null ? void 0 : _c.resolution) == null ? void 0 : _d.width) || 0, y: ((_f = (_e = element.additional) == null ? void 0 : _e.resolution) == null ? void 0 : _f.height) || 0, apiNamespace: "SYNO.FotoTeam", cacheKey, album: synoFolder.name || "" });
           });
           synOffset = synOffset + 500;
         }

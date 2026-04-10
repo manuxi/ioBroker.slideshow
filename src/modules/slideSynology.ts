@@ -186,27 +186,15 @@ export async function updatePictureList(Helper: GlobalHelper): Promise<SynoPictu
 			const ext = path.extname(element.info3).toLowerCase();
 			return ext === ".jpg" || ext === ".jpeg" || ext === ".png";
 		});
-		// Filter for orientation
-		if (Helper.Adapter.config.syno_format > 0) {
-			CurrentImageListFilter1.filter(function (element) {
-				if ((Helper.Adapter.config.syno_format === 1 && element.x > element.y) === true) {
-					if (Array.isArray(CurrentImages)) {
-						CurrentImages.push(element);
-					} else {
-						CurrentImages = [element];
-					}
-				}
-				if ((Helper.Adapter.config.syno_format === 2 && element.y > element.x) === true) {
-					if (Array.isArray(CurrentImages)) {
-						CurrentImages.push(element);
-					} else {
-						CurrentImages = [element];
-					}
-				}
-			});
+		// Filter for orientation (1 = landscape, 2 = portrait, 0 = all)
+		if (Helper.Adapter.config.syno_format === 1) {
+			CurrentImages = CurrentImageListFilter1.filter(element => element.x > element.y);
+		} else if (Helper.Adapter.config.syno_format === 2) {
+			CurrentImages = CurrentImageListFilter1.filter(element => element.y > element.x);
 		} else {
 			CurrentImages = CurrentImageListFilter1;
 		}
+		Helper.ReportingInfo("Debug", "Synology", `${CurrentImages.length} pictures after orientation filter (syno_format=${Helper.Adapter.config.syno_format})`);
 		// Sorting
 		switch (Helper.Adapter.config.syno_order) {
 			case 0:
@@ -456,8 +444,8 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 					info2: "",
 					info3: element.filename || "",
 					date: PictureDate,
-					x: element.additional?.resolution?.height || 0,
-					y: element.additional?.resolution?.width || 0,
+					x: element.additional?.resolution?.width || 0,
+					y: element.additional?.resolution?.height || 0,
 					apiNamespace: itemApiNs,
 					cacheKey: cacheKey,
 					passphrase: albumPassphrase || "",
@@ -511,7 +499,7 @@ async function getDsm7FolderItems(Helper: GlobalHelper, imageList: SynoPicture[]
 						}
 						// Extract cache_key from thumbnail additional data (required for download)
 						const cacheKey = element.additional?.thumbnail?.cache_key || "";
-						imageList.push({ path: String(element.id), url: "", info1: element.description || "", info2: "", info3: element.filename || "", date: PictureDate, x: element.additional?.resolution?.height || 0, y: element.additional?.resolution?.width || 0, apiNamespace: "SYNO.FotoTeam", cacheKey: cacheKey, album: synoFolder.name || ""});
+						imageList.push({ path: String(element.id), url: "", info1: element.description || "", info2: "", info3: element.filename || "", date: PictureDate, x: element.additional?.resolution?.width || 0, y: element.additional?.resolution?.height || 0, apiNamespace: "SYNO.FotoTeam", cacheKey: cacheKey, album: synoFolder.name || ""});
 					});
 					synOffset = synOffset + 500;
 				}
