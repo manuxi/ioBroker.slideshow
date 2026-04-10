@@ -536,13 +536,12 @@ async function loginSyno(Helper) {
       Helper.ReportingInfo("Debug", "Synology", `Login attempt to baseUrl: ${baseUrl}, user: ${Helper.Adapter.config.syno_username}, version: ${Helper.Adapter.config.syno_version}`);
       if (Helper.Adapter.config.syno_version === 0) {
         const loginAttempts = [
-          // Original working method: GET with version 3
-          { url: `${baseUrl}/photo/webapi/auth.cgi`, method: "GET", version: "3" },
-          // Alternative endpoints with GET
-          { url: `${baseUrl}/photo/webapi/entry.cgi`, method: "GET", version: "3" },
-          // Try POST as fallback
-          { url: `${baseUrl}/photo/webapi/entry.cgi`, method: "POST", version: "7" },
-          { url: `${baseUrl}/photo/webapi/auth.cgi`, method: "POST", version: "7" }
+          // Original working method: /webapi/entry.cgi with version 6 (NOT /photo/webapi!)
+          { url: `${baseUrl}/webapi/entry.cgi`, method: "GET", version: "6" },
+          // Fallback endpoints
+          { url: `${baseUrl}/photo/webapi/entry.cgi`, method: "GET", version: "6" },
+          { url: `${baseUrl}/webapi/auth.cgi`, method: "GET", version: "6" },
+          { url: `${baseUrl}/photo/webapi/auth.cgi`, method: "GET", version: "3" }
         ];
         let loginSuccess = false;
         let lastError = "";

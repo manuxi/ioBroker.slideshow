@@ -644,13 +644,12 @@ async function loginSyno(Helper: GlobalHelper): Promise<boolean>{
 				// DSM 7 — Synology Photos
 				// Try multiple endpoint/method combinations
 				const loginAttempts = [
-					// Original working method: GET with version 3
+					// Original working method: /webapi/entry.cgi with version 6 (NOT /photo/webapi!)
+					{ url: `${baseUrl}/webapi/entry.cgi`, method: "GET", version: "6" },
+					// Fallback endpoints
+					{ url: `${baseUrl}/photo/webapi/entry.cgi`, method: "GET", version: "6" },
+					{ url: `${baseUrl}/webapi/auth.cgi`, method: "GET", version: "6" },
 					{ url: `${baseUrl}/photo/webapi/auth.cgi`, method: "GET", version: "3" },
-					// Alternative endpoints with GET
-					{ url: `${baseUrl}/photo/webapi/entry.cgi`, method: "GET", version: "3" },
-					// Try POST as fallback
-					{ url: `${baseUrl}/photo/webapi/entry.cgi`, method: "POST", version: "7" },
-					{ url: `${baseUrl}/photo/webapi/auth.cgi`, method: "POST", version: "7" },
 				];
 
 				let loginSuccess = false;
