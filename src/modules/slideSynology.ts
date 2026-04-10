@@ -228,6 +228,25 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 	const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
 	const apiUrl = `${baseUrl}/webapi/entry.cgi`;
 
+	// Discover available Photo APIs for debugging
+	try {
+		const discoveryResult = await synoConnection.get<any>(apiUrl, {
+			params: {
+				api: "SYNO.API.Info",
+				method: "query",
+				version: 1,
+				query: "SYNO.Foto,SYNO.FotoTeam",
+				SynoToken: synoToken
+			}
+		});
+		if (discoveryResult.data?.success) {
+			const apis = Object.keys(discoveryResult.data.data || {}).sort();
+			Helper.ReportingInfo("Debug", "Synology", `Available Photo APIs (${apis.length}): ${apis.join(", ")}`);
+		}
+	} catch (err) {
+		Helper.ReportingInfo("Debug", "Synology", `API discovery failed: ${(err as Error).message}`);
+	}
+
 	// Search for the album in shared space first, then personal space
 	for (const apiNs of ["SYNO.FotoTeam", "SYNO.Foto"]) {
 		const spaceName = apiNs === "SYNO.FotoTeam" ? "Shared Space" : "Personal Space";
@@ -259,7 +278,10 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 			}
 
 			const albums = synResult.data.data.list;
-			if (albums.length === 0) break;
+			if (albums.length === 0) {
+				Helper.ReportingInfo("Debug", "Synology", `${spaceName}: no albums found (empty list)`);
+				break;
+			}
 
 			Helper.ReportingInfo("Debug", "Synology", `${spaceName}: found ${albums.length} albums at offset ${offset}: ${albums.map((a: any) => a.name).join(", ")}`);
 
