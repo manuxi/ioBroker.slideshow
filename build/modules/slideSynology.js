@@ -93,7 +93,8 @@ async function getPicturePrefetch(Helper) {
     let synURL = "";
     if (Helper.Adapter.config.syno_version === 0) {
       const apiNs = CurrentImage.apiNamespace || "SYNO.FotoTeam";
-      synURL = `${baseUrl}/webapi/entry.cgi?api=${apiNs}.Download&method=download&version=1&unit_id=%5B${CurrentImage.path}%5D&force_download=true&SynoToken=${synoToken}`;
+      const photoApiUrl = cachedPhotoApiUrl || `${baseUrl}/webapi/entry.cgi`;
+      synURL = `${photoApiUrl}?api=${apiNs}.Download&method=download&version=1&unit_id=%5B${CurrentImage.path}%5D&force_download=true&SynoToken=${synoToken}`;
     } else {
       synURL = `${baseUrl}/photo/webapi/download.php?api=SYNO.PhotoStation.Download&method=getphoto&version=1&id=${CurrentImage.path}&download=true`;
     }
@@ -187,26 +188,48 @@ async function updatePictureList(Helper) {
     return { success: true, picturecount: CurrentImages.length };
   }
 }
-async function getDsm7AlbumItems(Helper, albumName, imageList) {
-  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w;
-  const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
-  const apiUrl = `${baseUrl}/webapi/entry.cgi`;
-  try {
-    const discoveryResult = await synoConnection.get(apiUrl, {
-      params: {
-        api: "SYNO.API.Info",
-        method: "query",
-        version: 1,
-        query: "SYNO.Foto,SYNO.FotoTeam",
-        SynoToken: synoToken
+let cachedPhotoApiUrl = "";
+async function discoverPhotoApiUrl(Helper, baseUrl) {
+  var _a, _b;
+  if (cachedPhotoApiUrl)
+    return cachedPhotoApiUrl;
+  const candidates = [
+    `${baseUrl}/webapi/entry.cgi`,
+    `${baseUrl}/photo/webapi/entry.cgi`
+  ];
+  for (const url of candidates) {
+    try {
+      const result = await synoConnection.get(url, {
+        params: {
+          api: "SYNO.API.Info",
+          method: "query",
+          version: 1,
+          query: "SYNO.Foto",
+          SynoToken: synoToken
+        }
+      });
+      if (((_a = result.data) == null ? void 0 : _a.success) === true) {
+        const apis = Object.keys(result.data.data || {}).filter((k) => k.startsWith("SYNO.Foto")).sort();
+        if (apis.length > 0) {
+          Helper.ReportingInfo("Info", "Synology", `Photo API found at ${url} (${apis.length} APIs: ${apis.slice(0, 10).join(", ")}${apis.length > 10 ? "..." : ""})`);
+          cachedPhotoApiUrl = url;
+          return url;
+        }
+        Helper.ReportingInfo("Debug", "Synology", `${url}: no SYNO.Foto APIs registered`);
       }
-    });
-    if ((_a = discoveryResult.data) == null ? void 0 : _a.success) {
-      const apis = Object.keys(discoveryResult.data.data || {}).sort();
-      Helper.ReportingInfo("Debug", "Synology", `Available Photo APIs (${apis.length}): ${apis.join(", ")}`);
+    } catch (err) {
+      Helper.ReportingInfo("Debug", "Synology", `${url}: not accessible (${((_b = err.response) == null ? void 0 : _b.status) || err.message})`);
     }
-  } catch (err) {
-    Helper.ReportingInfo("Debug", "Synology", `API discovery failed: ${err.message}`);
+  }
+  return null;
+}
+async function getDsm7AlbumItems(Helper, albumName, imageList) {
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v;
+  const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
+  const apiUrl = await discoverPhotoApiUrl(Helper, baseUrl);
+  if (!apiUrl) {
+    Helper.ReportingError(null, "Could not find Synology Photos API endpoint", "Synology", "getDsm7AlbumItems", "", false);
+    return;
   }
   for (const apiNs of ["SYNO.FotoTeam", "SYNO.Foto"]) {
     const spaceName = apiNs === "SYNO.FotoTeam" ? "Shared Space" : "Personal Space";
@@ -230,7 +253,7 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
         Helper.ReportingInfo("Debug", "Synology", `Could not list albums in ${spaceName}: ${err.message}`);
         break;
       }
-      if (((_b = synResult.data) == null ? void 0 : _b.success) !== true || !Array.isArray((_d = (_c = synResult.data) == null ? void 0 : _c.data) == null ? void 0 : _d.list)) {
+      if (((_a = synResult.data) == null ? void 0 : _a.success) !== true || !Array.isArray((_c = (_b = synResult.data) == null ? void 0 : _b.data) == null ? void 0 : _c.list)) {
         Helper.ReportingInfo("Debug", "Synology", `No albums accessible in ${spaceName}: ${JSON.stringify(synResult.data)}`);
         break;
       }
@@ -264,7 +287,7 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
           SynoToken: synoToken
         }
       });
-      if (((_e = synResult.data) == null ? void 0 : _e.success) !== true || !Array.isArray((_g = (_f = synResult.data) == null ? void 0 : _f.data) == null ? void 0 : _g.list)) {
+      if (((_d = synResult.data) == null ? void 0 : _d.success) !== true || !Array.isArray((_f = (_e = synResult.data) == null ? void 0 : _e.data) == null ? void 0 : _f.list)) {
         Helper.ReportingError(null, `Error getting pictures from album "${albumName}"`, "Synology", "getDsm7AlbumItems", JSON.stringify(synResult.data), false);
         return;
       }
@@ -284,8 +307,8 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
           info2: "",
           info3: element.filename || "",
           date: PictureDate,
-          x: ((_i = (_h = element.additional) == null ? void 0 : _h.resolution) == null ? void 0 : _i.height) || 0,
-          y: ((_k = (_j = element.additional) == null ? void 0 : _j.resolution) == null ? void 0 : _k.width) || 0,
+          x: ((_h = (_g = element.additional) == null ? void 0 : _g.resolution) == null ? void 0 : _h.height) || 0,
+          y: ((_j = (_i = element.additional) == null ? void 0 : _i.resolution) == null ? void 0 : _j.width) || 0,
           apiNamespace: apiNs
         });
       }
@@ -323,7 +346,7 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
         Helper.ReportingInfo("Debug", "Synology", `${variantLabel}: request failed: ${err.message}`);
         break;
       }
-      if (((_l = synResult.data) == null ? void 0 : _l.success) !== true || !Array.isArray((_n = (_m = synResult.data) == null ? void 0 : _m.data) == null ? void 0 : _n.list)) {
+      if (((_k = synResult.data) == null ? void 0 : _k.success) !== true || !Array.isArray((_m = (_l = synResult.data) == null ? void 0 : _l.data) == null ? void 0 : _m.list)) {
         Helper.ReportingInfo("Debug", "Synology", `${variantLabel}: not available (${JSON.stringify(synResult.data)})`);
         break;
       }
@@ -337,9 +360,9 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
       }).join(", ");
       Helper.ReportingInfo("Debug", "Synology", `${variantLabel}: found ${sharedAlbums.length} albums at offset ${sharedOffset}: ${albumNames}`);
       for (const entry of sharedAlbums) {
-        const name = ((_o = entry.album) == null ? void 0 : _o.name) || entry.name;
+        const name = ((_n = entry.album) == null ? void 0 : _n.name) || entry.name;
         if (name === albumName) {
-          sharedAlbumId = ((_p = entry.album) == null ? void 0 : _p.id) || entry.id;
+          sharedAlbumId = ((_o = entry.album) == null ? void 0 : _o.id) || entry.id;
           sharedPassphrase = entry.passphrase || "";
           Helper.ReportingInfo("Info", "Synology", `Found album "${albumName}" (ID: ${sharedAlbumId}) via ${variantLabel}`);
           break;
@@ -364,7 +387,7 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
           params.passphrase = sharedPassphrase;
         }
         const synResult = await synoConnection.get(apiUrl, { params });
-        if (((_q = synResult.data) == null ? void 0 : _q.success) !== true || !Array.isArray((_s = (_r = synResult.data) == null ? void 0 : _r.data) == null ? void 0 : _s.list)) {
+        if (((_p = synResult.data) == null ? void 0 : _p.success) !== true || !Array.isArray((_r = (_q = synResult.data) == null ? void 0 : _q.data) == null ? void 0 : _r.list)) {
           Helper.ReportingError(null, `Error getting pictures from shared album "${albumName}"`, "Synology", "getDsm7AlbumItems/Shared", JSON.stringify(synResult.data), false);
           return;
         }
@@ -384,8 +407,8 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
             info2: "",
             info3: element.filename || "",
             date: PictureDate,
-            x: ((_u = (_t = element.additional) == null ? void 0 : _t.resolution) == null ? void 0 : _u.height) || 0,
-            y: ((_w = (_v = element.additional) == null ? void 0 : _v.resolution) == null ? void 0 : _w.width) || 0,
+            x: ((_t = (_s = element.additional) == null ? void 0 : _s.resolution) == null ? void 0 : _t.height) || 0,
+            y: ((_v = (_u = element.additional) == null ? void 0 : _u.resolution) == null ? void 0 : _v.width) || 0,
             apiNamespace: "SYNO.Foto"
           });
         }
@@ -400,6 +423,7 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
 }
 async function getDsm7FolderItems(Helper, imageList) {
   const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
+  const photoApiUrl = cachedPhotoApiUrl || `${baseUrl}/webapi/entry.cgi`;
   Helper.ReportingInfo("Debug", "Synology", "Start iterating folders (no album configured)");
   synoFolders.length = 0;
   await synoGetFolders(Helper, 1);
@@ -409,7 +433,7 @@ async function getDsm7FolderItems(Helper, imageList) {
     let synEndOfFiles = false;
     let synOffset = 0;
     while (synEndOfFiles === false) {
-      const synURL = `${baseUrl}/webapi/entry.cgi?api=SYNO.FotoTeam.Browse.Item&method=list&version=1&limit=500&item_type=%5B0%5D&additional=%5B%22description%22%2C%22orientation%22%2C%22tag%22%2C%22resolution%22%5D&offset=${synOffset}&SynoToken=${synoToken}&folder_id=${synoFolder.id}`;
+      const synURL = `${photoApiUrl}?api=SYNO.FotoTeam.Browse.Item&method=list&version=1&limit=500&item_type=%5B0%5D&additional=%5B%22description%22%2C%22orientation%22%2C%22tag%22%2C%22resolution%22%5D&offset=${synOffset}&SynoToken=${synoToken}&folder_id=${synoFolder.id}`;
       const synResult = await synoConnection.get(synURL);
       if (synResult.data["success"] === true && Array.isArray(synResult.data["data"]["list"])) {
         if (synResult.data["data"]["list"].length === 0) {
@@ -500,6 +524,7 @@ async function loginSyno(Helper) {
         Helper.ReportingInfo("Debug", "Synology", `DSM 7 login result: success=${(_a = synResult.data) == null ? void 0 : _a.success}`);
         if (((_b = synResult.data) == null ? void 0 : _b.success) === true && ((_d = (_c = synResult.data) == null ? void 0 : _c.data) == null ? void 0 : _d.synotoken)) {
           synoToken = synResult.data.data.synotoken;
+          cachedPhotoApiUrl = "";
           synoConnectionState = true;
           Helper.ReportingInfo("Info", "Synology", "Synology DSM 7 login successful");
           return true;
@@ -547,12 +572,12 @@ async function synoCheckConnection(Helper) {
   try {
     const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
     if (Helper.Adapter.config.syno_version === 0) {
-      const synResult = await synoConnection.get(`${baseUrl}/webapi/entry.cgi`, {
+      const photoApiUrl = cachedPhotoApiUrl || `${baseUrl}/webapi/entry.cgi`;
+      const synResult = await synoConnection.get(photoApiUrl, {
         params: {
-          api: "SYNO.FotoTeam.Browse.Folder",
+          api: "SYNO.Foto.Browse.Album",
           method: "list",
-          version: 1,
-          id: 1,
+          version: 2,
           limit: 1,
           offset: 0,
           SynoToken: synoToken
@@ -597,10 +622,11 @@ async function synoCheckConnection(Helper) {
 async function synoGetFolders(Helper, FolderID) {
   try {
     const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
+    const photoApiUrl = cachedPhotoApiUrl || `${baseUrl}/webapi/entry.cgi`;
     let synoEndOfFolders = false;
     let synoOffset = 0;
     while (synoEndOfFolders === false) {
-      const synoURL = `${baseUrl}/webapi/entry.cgi?api=SYNO.FotoTeam.Browse.Folder&method=list&version=1&id=${FolderID}&limit=500&offset=${synoOffset}&SynoToken=${synoToken}`;
+      const synoURL = `${photoApiUrl}?api=SYNO.FotoTeam.Browse.Folder&method=list&version=1&id=${FolderID}&limit=500&offset=${synoOffset}&SynoToken=${synoToken}`;
       Helper.ReportingInfo("Debug", "Synology", `Iterating folder id ${FolderID} `, { URL: synoURL });
       const synResult = await synoConnection.get(synoURL);
       Helper.ReportingInfo("Debug", "Synology", `Result iterating folder id ${FolderID}`, { JSON: JSON.stringify(synResult.data) });
