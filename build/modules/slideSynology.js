@@ -42,6 +42,12 @@ let synoConnectionState = false;
 let synoToken = "";
 const AxiosJar = new import_tough_cookie.CookieJar();
 const synoConnection = (0, import_axios_cookiejar_support.wrapper)(import_axios.default.create({ withCredentials: true, jar: AxiosJar }));
+synoConnection.interceptors.request.use((config) => {
+  if (synoToken) {
+    config.headers["X-SYNO-TOKEN"] = synoToken;
+  }
+  return config;
+});
 let CurrentImages;
 let CurrentImage;
 let CurrentPicture;
@@ -93,7 +99,7 @@ async function getPicturePrefetch(Helper) {
     let synURL = "";
     if (Helper.Adapter.config.syno_version === 0) {
       const apiNs = CurrentImage.apiNamespace || "SYNO.FotoTeam";
-      const photoApiUrl = cachedPhotoApiUrl || `${baseUrl}/webapi/entry.cgi`;
+      const photoApiUrl = cachedPhotoApiUrl || `${baseUrl}/photo/webapi/entry.cgi`;
       synURL = `${photoApiUrl}?api=${apiNs}.Download&method=download&version=1&unit_id=%5B${CurrentImage.path}%5D&force_download=true&SynoToken=${synoToken}`;
     } else {
       synURL = `${baseUrl}/photo/webapi/download.php?api=SYNO.PhotoStation.Download&method=getphoto&version=1&id=${CurrentImage.path}&download=true`;
@@ -193,33 +199,25 @@ async function discoverPhotoApiUrl(Helper, baseUrl) {
   var _a, _b;
   if (cachedPhotoApiUrl)
     return cachedPhotoApiUrl;
-  const candidates = [
-    `${baseUrl}/webapi/entry.cgi`,
-    `${baseUrl}/photo/webapi/entry.cgi`
-  ];
-  for (const url of candidates) {
-    try {
-      const result = await synoConnection.get(url, {
-        params: {
-          api: "SYNO.API.Info",
-          method: "query",
-          version: 1,
-          query: "SYNO.Foto",
-          SynoToken: synoToken
-        }
-      });
-      if (((_a = result.data) == null ? void 0 : _a.success) === true) {
-        const apis = Object.keys(result.data.data || {}).filter((k) => k.startsWith("SYNO.Foto")).sort();
-        if (apis.length > 0) {
-          Helper.ReportingInfo("Info", "Synology", `Photo API found at ${url} (${apis.length} APIs: ${apis.slice(0, 10).join(", ")}${apis.length > 10 ? "..." : ""})`);
-          cachedPhotoApiUrl = url;
-          return url;
-        }
-        Helper.ReportingInfo("Debug", "Synology", `${url}: no SYNO.Foto APIs registered`);
+  const url = `${baseUrl}/photo/webapi/entry.cgi`;
+  try {
+    const result = await synoConnection.get(url, {
+      params: {
+        api: "SYNO.API.Info",
+        method: "query",
+        version: 1,
+        query: "SYNO.Foto,SYNO.FotoTeam"
       }
-    } catch (err) {
-      Helper.ReportingInfo("Debug", "Synology", `${url}: not accessible (${((_b = err.response) == null ? void 0 : _b.status) || err.message})`);
+    });
+    if (((_a = result.data) == null ? void 0 : _a.success) === true) {
+      const apis = Object.keys(result.data.data || {}).sort();
+      Helper.ReportingInfo("Info", "Synology", `Photo API available (${apis.length} APIs: ${apis.slice(0, 15).join(", ")}${apis.length > 15 ? "..." : ""})`);
+      cachedPhotoApiUrl = url;
+      return url;
     }
+    Helper.ReportingInfo("Debug", "Synology", `Photo API query failed: ${JSON.stringify(result.data)}`);
+  } catch (err) {
+    Helper.Adapter.log.error(`Cannot reach Synology Photos API at ${url}: ${((_b = err.response) == null ? void 0 : _b.status) || err.message}`);
   }
   return null;
 }
@@ -423,7 +421,7 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
 }
 async function getDsm7FolderItems(Helper, imageList) {
   const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
-  const photoApiUrl = cachedPhotoApiUrl || `${baseUrl}/webapi/entry.cgi`;
+  const photoApiUrl = cachedPhotoApiUrl || `${baseUrl}/photo/webapi/entry.cgi`;
   Helper.ReportingInfo("Debug", "Synology", "Start iterating folders (no album configured)");
   synoFolders.length = 0;
   await synoGetFolders(Helper, 1);
@@ -509,24 +507,24 @@ async function loginSyno(Helper) {
     try {
       const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
       if (Helper.Adapter.config.syno_version === 0) {
-        const loginUrl = `${baseUrl}/webapi/entry.cgi`;
-        Helper.ReportingInfo("Debug", "Synology", `DSM 7 login to ${baseUrl}`);
+        const loginUrl = `${baseUrl}/photo/webapi/auth.cgi`;
+        Helper.ReportingInfo("Debug", "Synology", `Synology Photos login to ${baseUrl}/photo/`);
         const synResult = await synoConnection.get(loginUrl, {
           params: {
             api: "SYNO.API.Auth",
-            version: 7,
+            version: 3,
             method: "login",
             account: Helper.Adapter.config.syno_username,
             passwd: Helper.Adapter.config.syno_userpass,
             enable_syno_token: "yes"
           }
         });
-        Helper.ReportingInfo("Debug", "Synology", `DSM 7 login result: success=${(_a = synResult.data) == null ? void 0 : _a.success}`);
-        if (((_b = synResult.data) == null ? void 0 : _b.success) === true && ((_d = (_c = synResult.data) == null ? void 0 : _c.data) == null ? void 0 : _d.synotoken)) {
-          synoToken = synResult.data.data.synotoken;
+        Helper.ReportingInfo("Debug", "Synology", `Photos login result: success=${(_a = synResult.data) == null ? void 0 : _a.success}`);
+        if (((_b = synResult.data) == null ? void 0 : _b.success) === true && ((_d = (_c = synResult.data) == null ? void 0 : _c.data) == null ? void 0 : _d.sid)) {
+          synoToken = synResult.data.data.synotoken || "";
           cachedPhotoApiUrl = "";
           synoConnectionState = true;
-          Helper.ReportingInfo("Info", "Synology", "Synology DSM 7 login successful");
+          Helper.ReportingInfo("Info", "Synology", "Synology Photos login successful");
           return true;
         } else {
           const errorCode = (_f = (_e = synResult.data) == null ? void 0 : _e.error) == null ? void 0 : _f.code;
@@ -572,7 +570,7 @@ async function synoCheckConnection(Helper) {
   try {
     const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
     if (Helper.Adapter.config.syno_version === 0) {
-      const photoApiUrl = cachedPhotoApiUrl || `${baseUrl}/webapi/entry.cgi`;
+      const photoApiUrl = cachedPhotoApiUrl || `${baseUrl}/photo/webapi/entry.cgi`;
       const synResult = await synoConnection.get(photoApiUrl, {
         params: {
           api: "SYNO.Foto.Browse.Album",
@@ -622,7 +620,7 @@ async function synoCheckConnection(Helper) {
 async function synoGetFolders(Helper, FolderID) {
   try {
     const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
-    const photoApiUrl = cachedPhotoApiUrl || `${baseUrl}/webapi/entry.cgi`;
+    const photoApiUrl = cachedPhotoApiUrl || `${baseUrl}/photo/webapi/entry.cgi`;
     let synoEndOfFolders = false;
     let synoOffset = 0;
     while (synoEndOfFolders === false) {

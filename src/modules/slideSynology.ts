@@ -38,6 +38,13 @@ let synoToken = "";
 const AxiosJar = new CookieJar();
 // Axios instance with options
 const synoConnection = wrapper(axios.create({ withCredentials: true, jar: AxiosJar} ));
+// Add CSRF token header to every request (required by Synology Photos)
+synoConnection.interceptors.request.use(config => {
+	if (synoToken) {
+		config.headers["X-SYNO-TOKEN"] = synoToken;
+	}
+	return config;
+});
 
 let CurrentImages: SynoPicture[];
 let CurrentImage: SynoPicture;
@@ -106,7 +113,7 @@ export async function getPicturePrefetch(Helper: GlobalHelper): Promise<void> {
 		if (Helper.Adapter.config.syno_version === 0){
 			// DSM 7 — Synology Photos
 			const apiNs = CurrentImage.apiNamespace || "SYNO.FotoTeam";
-			const photoApiUrl = cachedPhotoApiUrl || `${baseUrl}/webapi/entry.cgi`;
+			const photoApiUrl = cachedPhotoApiUrl || `${baseUrl}/photo/webapi/entry.cgi`;
 			synURL = `${photoApiUrl}?api=${apiNs}.Download&method=download&version=1&unit_id=%5B${CurrentImage.path}%5D&force_download=true&SynoToken=${synoToken}`;
 		} else {
 			// DSM 6 — PhotoStation
@@ -226,40 +233,30 @@ export async function updatePictureList(Helper: GlobalHelper): Promise<SynoPictu
 let cachedPhotoApiUrl = "";
 
 /**
- * Discover the correct API endpoint for Synology Photos.
- * Tries /webapi/entry.cgi first, then /photo/webapi/entry.cgi.
+ * Discover available Synology Photos APIs and cache the API URL.
  */
 async function discoverPhotoApiUrl(Helper: GlobalHelper, baseUrl: string): Promise<string | null> {
 	if (cachedPhotoApiUrl) return cachedPhotoApiUrl;
 
-	const candidates = [
-		`${baseUrl}/webapi/entry.cgi`,
-		`${baseUrl}/photo/webapi/entry.cgi`,
-	];
-
-	for (const url of candidates) {
-		try {
-			const result = await synoConnection.get<any>(url, {
-				params: {
-					api: "SYNO.API.Info",
-					method: "query",
-					version: 1,
-					query: "SYNO.Foto",
-					SynoToken: synoToken
-				}
-			});
-			if (result.data?.success === true) {
-				const apis = Object.keys(result.data.data || {}).filter(k => k.startsWith("SYNO.Foto")).sort();
-				if (apis.length > 0) {
-					Helper.ReportingInfo("Info", "Synology", `Photo API found at ${url} (${apis.length} APIs: ${apis.slice(0, 10).join(", ")}${apis.length > 10 ? "..." : ""})`);
-					cachedPhotoApiUrl = url;
-					return url;
-				}
-				Helper.ReportingInfo("Debug", "Synology", `${url}: no SYNO.Foto APIs registered`);
+	const url = `${baseUrl}/photo/webapi/entry.cgi`;
+	try {
+		const result = await synoConnection.get<any>(url, {
+			params: {
+				api: "SYNO.API.Info",
+				method: "query",
+				version: 1,
+				query: "SYNO.Foto,SYNO.FotoTeam"
 			}
-		} catch (err) {
-			Helper.ReportingInfo("Debug", "Synology", `${url}: not accessible (${(err as AxiosError).response?.status || (err as Error).message})`);
+		});
+		if (result.data?.success === true) {
+			const apis = Object.keys(result.data.data || {}).sort();
+			Helper.ReportingInfo("Info", "Synology", `Photo API available (${apis.length} APIs: ${apis.slice(0, 15).join(", ")}${apis.length > 15 ? "..." : ""})`);
+			cachedPhotoApiUrl = url;
+			return url;
 		}
+		Helper.ReportingInfo("Debug", "Synology", `Photo API query failed: ${JSON.stringify(result.data)}`);
+	} catch (err) {
+		Helper.Adapter.log.error(`Cannot reach Synology Photos API at ${url}: ${(err as AxiosError).response?.status || (err as Error).message}`);
 	}
 	return null;
 }
@@ -503,7 +500,7 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
  */
 async function getDsm7FolderItems(Helper: GlobalHelper, imageList: SynoPicture[]): Promise<void> {
 	const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
-	const photoApiUrl = cachedPhotoApiUrl || `${baseUrl}/webapi/entry.cgi`;
+	const photoApiUrl = cachedPhotoApiUrl || `${baseUrl}/photo/webapi/entry.cgi`;
 
 	Helper.ReportingInfo("Debug", "Synology", "Start iterating folders (no album configured)");
 	synoFolders.length = 0;
@@ -598,25 +595,25 @@ async function loginSyno(Helper: GlobalHelper): Promise<boolean>{
 		try{
 			const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
 			if (Helper.Adapter.config.syno_version === 0){
-				// DSM 7 — Synology Photos
-				const loginUrl = `${baseUrl}/webapi/entry.cgi`;
-				Helper.ReportingInfo("Debug", "Synology", `DSM 7 login to ${baseUrl}`);
+				// DSM 7 — Synology Photos (login via Photos-specific auth endpoint)
+				const loginUrl = `${baseUrl}/photo/webapi/auth.cgi`;
+				Helper.ReportingInfo("Debug", "Synology", `Synology Photos login to ${baseUrl}/photo/`);
 				const synResult = await synoConnection.get<any>(loginUrl, {
 					params: {
 						api: "SYNO.API.Auth",
-						version: 7,
+						version: 3,
 						method: "login",
 						account: Helper.Adapter.config.syno_username,
 						passwd: Helper.Adapter.config.syno_userpass,
 						enable_syno_token: "yes"
 					}
 				});
-				Helper.ReportingInfo("Debug", "Synology", `DSM 7 login result: success=${synResult.data?.success}`);
-				if (synResult.data?.success === true && synResult.data?.data?.synotoken){
-					synoToken = synResult.data.data.synotoken;
+				Helper.ReportingInfo("Debug", "Synology", `Photos login result: success=${synResult.data?.success}`);
+				if (synResult.data?.success === true && synResult.data?.data?.sid){
+					synoToken = synResult.data.data.synotoken || "";
 					cachedPhotoApiUrl = ""; // Reset API URL cache on new login
 					synoConnectionState = true;
-					Helper.ReportingInfo("Info", "Synology", "Synology DSM 7 login successful");
+					Helper.ReportingInfo("Info", "Synology", "Synology Photos login successful");
 					return true;
 				}else{
 					const errorCode = synResult.data?.error?.code;
@@ -665,7 +662,7 @@ async function synoCheckConnection(Helper: GlobalHelper): Promise<boolean>{
 		const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
 		if (Helper.Adapter.config.syno_version === 0){
 			// DSM 7 — verify session via API info query
-			const photoApiUrl = cachedPhotoApiUrl || `${baseUrl}/webapi/entry.cgi`;
+			const photoApiUrl = cachedPhotoApiUrl || `${baseUrl}/photo/webapi/entry.cgi`;
 			const synResult = await synoConnection.get<any>(photoApiUrl, {
 				params: {
 					api: "SYNO.Foto.Browse.Album",
@@ -717,7 +714,7 @@ async function synoCheckConnection(Helper: GlobalHelper): Promise<boolean>{
 async function synoGetFolders(Helper: GlobalHelper, FolderID: number): Promise<boolean>{
 	try{
 		const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
-		const photoApiUrl = cachedPhotoApiUrl || `${baseUrl}/webapi/entry.cgi`;
+		const photoApiUrl = cachedPhotoApiUrl || `${baseUrl}/photo/webapi/entry.cgi`;
 		let synoEndOfFolders = false;
 		let synoOffset = 0;
 		while (synoEndOfFolders === false){
