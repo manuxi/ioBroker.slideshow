@@ -2,6 +2,7 @@ import { GlobalHelper } from "./global-helper";
 import axios, { AxiosError } from "axios";
 import { wrapper } from "axios-cookiejar-support"
 import { CookieJar } from "tough-cookie";
+import * as https from "https";
 
 import * as path from "path";
 
@@ -37,8 +38,16 @@ let synoConnectionState  = false;
 let synoToken = "";
 // Authentication Cookie
 const AxiosJar = new CookieJar();
+// HTTPS agent that accepts self-signed certificates (common for Synology NAS)
+const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 // Axios instance with options
-const synoConnection = wrapper(axios.create({ withCredentials: true, jar: AxiosJar} ));
+const synoConnection = wrapper(axios.create({
+	withCredentials: true,
+	jar: AxiosJar,
+	httpsAgent: httpsAgent,
+	// Timeout for requests
+	timeout: 30000
+}));
 // Add CSRF token header to every request (required by Synology Photos)
 synoConnection.interceptors.request.use(config => {
 	if (synoToken) {
@@ -634,30 +643,97 @@ async function loginSyno(Helper: GlobalHelper): Promise<boolean>{
 		// Run Login
 		try{
 			const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
+			Helper.ReportingInfo("Debug", "Synology", `Login attempt to baseUrl: ${baseUrl}, user: ${Helper.Adapter.config.syno_username}, version: ${Helper.Adapter.config.syno_version}`);
+
 			if (Helper.Adapter.config.syno_version === 0){
-				// DSM 7 — Synology Photos (login via Photos-specific auth endpoint)
-				const loginUrl = `${baseUrl}/photo/webapi/auth.cgi`;
-				Helper.ReportingInfo("Debug", "Synology", `Synology Photos login to ${baseUrl}/photo/`);
-				const synResult = await synoConnection.get<any>(loginUrl, {
-					params: {
-						api: "SYNO.API.Auth",
-						version: 3,
-						method: "login",
-						account: Helper.Adapter.config.syno_username,
-						passwd: Helper.Adapter.config.syno_userpass,
-						enable_syno_token: "yes"
+				// DSM 7 — Synology Photos
+				// Try multiple endpoint/method combinations
+				const loginAttempts = [
+					// Original working method: GET with version 3
+					{ url: `${baseUrl}/photo/webapi/auth.cgi`, method: "GET", version: "3" },
+					// Alternative endpoints with GET
+					{ url: `${baseUrl}/photo/webapi/entry.cgi`, method: "GET", version: "3" },
+					// Try POST as fallback
+					{ url: `${baseUrl}/photo/webapi/entry.cgi`, method: "POST", version: "7" },
+					{ url: `${baseUrl}/photo/webapi/auth.cgi`, method: "POST", version: "7" },
+				];
+
+				let loginSuccess = false;
+				let lastError = "";
+
+				for (const attempt of loginAttempts) {
+					Helper.ReportingInfo("Debug", "Synology", `Trying ${attempt.method} login at ${attempt.url} (API version ${attempt.version})`);
+
+					try {
+						let synResult: any;
+
+						if (attempt.method === "GET") {
+							// GET request with query parameters (original method)
+							synResult = await synoConnection.get<any>(attempt.url, {
+								params: {
+									api: "SYNO.API.Auth",
+									version: attempt.version,
+									method: "login",
+									account: Helper.Adapter.config.syno_username,
+									passwd: Helper.Adapter.config.syno_userpass,
+									enable_syno_token: "yes"
+								}
+							});
+						} else {
+							// POST request with form data
+							const formData = new URLSearchParams();
+							formData.append("api", "SYNO.API.Auth");
+							formData.append("version", attempt.version);
+							formData.append("method", "login");
+							formData.append("account", Helper.Adapter.config.syno_username);
+							formData.append("passwd", Helper.Adapter.config.syno_userpass);
+							formData.append("enable_syno_token", "yes");
+
+							synResult = await synoConnection.post<any>(attempt.url, formData, {
+								headers: { "Content-Type": "application/x-www-form-urlencoded" }
+							});
+						}
+
+						Helper.ReportingInfo("Debug", "Synology", `Login response: ${JSON.stringify(synResult.data)}`);
+
+						if (synResult.data?.success === true) {
+							const sid = synResult.data.data?.sid;
+							synoToken = synResult.data.data?.synotoken || "";
+							cachedPhotoApiUrl = ""; // Reset API URL cache on new login
+							synoConnectionState = true;
+							Helper.ReportingInfo("Info", "Synology", `Synology Photos login successful via ${attempt.method} ${attempt.url} (sid: ${sid ? "received" : "none"}, synotoken: ${synoToken ? "received" : "none"})`);
+							loginSuccess = true;
+							break;
+						} else {
+							const errorCode = synResult.data?.error?.code;
+							lastError = `error code ${errorCode}`;
+							Helper.ReportingInfo("Debug", "Synology", `Login failed: error code ${errorCode}, full response: ${JSON.stringify(synResult.data)}`);
+
+							// Error codes: 400=invalid params, 401=account disabled, 402=permission denied, 403=2FA required, 404=2FA failed
+							if (errorCode === 403) {
+								Helper.Adapter.log.error("Synology login failed: 2-Factor Authentication is enabled. Please disable 2FA for the ioBroker user or use an app-specific password.");
+								synoConnectionState = false;
+								return false;
+							}
+							if (errorCode === 401) {
+								Helper.Adapter.log.error("Synology login failed: Account disabled or wrong credentials");
+								synoConnectionState = false;
+								return false;
+							}
+						}
+					} catch (endpointErr) {
+						const axErr = endpointErr as AxiosError;
+						const status = axErr.response?.status;
+						const responseData = axErr.response?.data;
+						lastError = `HTTP ${status || axErr.code || axErr.message}`;
+						Helper.ReportingInfo("Debug", "Synology", `Login endpoint failed: ${lastError}, response: ${JSON.stringify(responseData)}`);
 					}
-				});
-				Helper.ReportingInfo("Debug", "Synology", `Photos login result: success=${synResult.data?.success}`);
-				if (synResult.data?.success === true && synResult.data?.data?.sid){
-					synoToken = synResult.data.data.synotoken || "";
-					cachedPhotoApiUrl = ""; // Reset API URL cache on new login
-					synoConnectionState = true;
-					Helper.ReportingInfo("Info", "Synology", "Synology Photos login successful");
+				}
+
+				if (loginSuccess) {
 					return true;
-				}else{
-					const errorCode = synResult.data?.error?.code;
-					Helper.Adapter.log.error(`Connection failure to Synology Photos (error code: ${errorCode})`);
+				} else {
+					Helper.Adapter.log.error(`Connection failure to Synology Photos: All login attempts failed. Last error: ${lastError}`);
 					synoConnectionState = false;
 					return false;
 				}
@@ -676,12 +752,25 @@ async function loginSyno(Helper: GlobalHelper): Promise<boolean>{
 				}
 			}
 		} catch (err){
-			if ((err as AxiosError).response?.status === 403){
-				Helper.Adapter.log.error("Synology login denied (403 Forbidden)");
+			const axiosErr = err as AxiosError;
+			if (axiosErr.response?.status === 403){
+				Helper.Adapter.log.error("Synology login denied (403 Forbidden). Possible causes: 1) Wrong credentials, 2) Account locked (too many failed attempts), 3) IP blocked by Synology firewall, 4) 2FA enabled on account");
 				synoConnectionState = false;
 				return false;
-			}else if ((err as AxiosError).isAxiosError === true){
-				Helper.Adapter.log.error(`No connection to Synology: ${(err as AxiosError).message}`);
+			} else if (axiosErr.code === "ECONNREFUSED") {
+				Helper.Adapter.log.error(`Cannot connect to Synology at ${Helper.Adapter.config.syno_path}: Connection refused. Check if the NAS is reachable and the port is correct.`);
+				synoConnectionState = false;
+				return false;
+			} else if (axiosErr.code === "ENOTFOUND") {
+				Helper.Adapter.log.error(`Cannot connect to Synology: Host not found. Check the hostname/IP address: ${Helper.Adapter.config.syno_path}`);
+				synoConnectionState = false;
+				return false;
+			} else if (axiosErr.code === "ETIMEDOUT" || axiosErr.code === "ECONNABORTED") {
+				Helper.Adapter.log.error(`Connection to Synology timed out. Check if the NAS is reachable: ${Helper.Adapter.config.syno_path}`);
+				synoConnectionState = false;
+				return false;
+			} else if (axiosErr.isAxiosError === true){
+				Helper.Adapter.log.error(`No connection to Synology: ${axiosErr.message} (${axiosErr.code || "no code"})`);
 				synoConnectionState = false;
 				return false;
 			}else{
