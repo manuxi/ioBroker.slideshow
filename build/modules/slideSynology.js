@@ -100,11 +100,15 @@ async function getPicturePrefetch(Helper) {
     if (Helper.Adapter.config.syno_version === 0) {
       const apiNs = CurrentImage.apiNamespace || "SYNO.FotoTeam";
       const photoApiUrl = cachedPhotoApiUrl || `${baseUrl}/photo/webapi/entry.cgi`;
-      synURL = `${photoApiUrl}?api=${apiNs}.Download&method=download&version=1&unit_id=%5B${CurrentImage.path}%5D&force_download=true&SynoToken=${synoToken}`;
+      if (CurrentImage.cacheKey) {
+        synURL = `${photoApiUrl}?api=${apiNs}.Thumbnail&method=get&version=1&id=${CurrentImage.path}&cache_key=${encodeURIComponent(CurrentImage.cacheKey)}&type=unit&size=xl&SynoToken=${synoToken}`;
+      } else {
+        synURL = `${photoApiUrl}?api=${apiNs}.Download&method=download&version=1&unit_id=%5B${CurrentImage.path}%5D&force_download=true&SynoToken=${synoToken}`;
+      }
     } else {
       synURL = `${baseUrl}/photo/webapi/download.php?api=SYNO.PhotoStation.Download&method=getphoto&version=1&id=${CurrentImage.path}&download=true`;
     }
-    Helper.ReportingInfo("Debug", "Synology", `Downloading picture ${CurrentImage.info3} (ID ${CurrentImage.path})`);
+    Helper.ReportingInfo("Debug", "Synology", `Downloading picture ${CurrentImage.info3} (ID ${CurrentImage.path}, cacheKey: ${CurrentImage.cacheKey || "none"})`);
     const synResult = await synoConnection.get(synURL, { responseType: "arraybuffer" });
     const PicContentB64 = synResult.data.toString("base64");
     CurrentPicture = { ...CurrentImage, url: `data:image/jpeg;base64,${PicContentB64}` };
@@ -222,15 +226,15 @@ async function discoverPhotoApiUrl(Helper, baseUrl) {
   return null;
 }
 async function getDsm7AlbumItems(Helper, albumName, imageList) {
-  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v;
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z;
   const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
   const apiUrl = await discoverPhotoApiUrl(Helper, baseUrl);
   if (!apiUrl) {
     Helper.ReportingError(null, "Could not find Synology Photos API endpoint", "Synology", "getDsm7AlbumItems", "", false);
     return;
   }
-  for (const apiNs of ["SYNO.FotoTeam", "SYNO.Foto"]) {
-    const spaceName = apiNs === "SYNO.FotoTeam" ? "Shared Space" : "Personal Space";
+  for (const apiNs of ["SYNO.Foto", "SYNO.FotoTeam"]) {
+    const spaceName = apiNs === "SYNO.FotoTeam" ? "Shared Space (Team)" : "Personal Space (includes shared-with-me)";
     Helper.ReportingInfo("Debug", "Synology", `Searching for album "${albumName}" in ${spaceName}`);
     let albumId = null;
     let offset = 0;
@@ -260,7 +264,8 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
         Helper.ReportingInfo("Debug", "Synology", `${spaceName}: no albums found (empty list)`);
         break;
       }
-      Helper.ReportingInfo("Debug", "Synology", `${spaceName}: found ${albums.length} albums at offset ${offset}: ${albums.map((a) => a.name).join(", ")}`);
+      const albumDetails = albums.map((a) => `"${a.name}" (ID:${a.id}, shared:${a.shared || false})`).join(", ");
+      Helper.ReportingInfo("Debug", "Synology", `${spaceName}: found ${albums.length} albums at offset ${offset}: ${albumDetails}`);
       const found = albums.find((a) => a.name === albumName);
       if (found) {
         albumId = found.id;
@@ -281,7 +286,7 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
           album_id: albumId,
           offset: itemOffset,
           limit: 500,
-          additional: JSON.stringify(["description", "resolution", "orientation", "tag"]),
+          additional: JSON.stringify(["description", "resolution", "orientation", "tag", "thumbnail"]),
           SynoToken: synoToken
         }
       });
@@ -298,6 +303,7 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
         if (element.time) {
           PictureDate = synoTimestampToDate(element.time);
         }
+        const cacheKey = ((_h = (_g = element.additional) == null ? void 0 : _g.thumbnail) == null ? void 0 : _h.cache_key) || "";
         imageList.push({
           path: String(element.id),
           url: "",
@@ -305,9 +311,10 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
           info2: "",
           info3: element.filename || "",
           date: PictureDate,
-          x: ((_h = (_g = element.additional) == null ? void 0 : _g.resolution) == null ? void 0 : _h.height) || 0,
-          y: ((_j = (_i = element.additional) == null ? void 0 : _i.resolution) == null ? void 0 : _j.width) || 0,
-          apiNamespace: apiNs
+          x: ((_j = (_i = element.additional) == null ? void 0 : _i.resolution) == null ? void 0 : _j.height) || 0,
+          y: ((_l = (_k = element.additional) == null ? void 0 : _k.resolution) == null ? void 0 : _l.width) || 0,
+          apiNamespace: apiNs,
+          cacheKey
         });
       }
       itemOffset += 500;
@@ -316,9 +323,17 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
   }
   Helper.ReportingInfo("Debug", "Synology", `Searching for album "${albumName}" in Shared-with-me albums`);
   const sharedApiVariants = [
+    // Most common: list with shared_with_me category
     { api: "SYNO.Foto.Browse.Album", method: "list", version: 2, extra: { category: "shared_with_me" } },
+    // Alternative: list all and filter by shared flag
+    { api: "SYNO.Foto.Browse.Album", method: "list", version: 1, extra: { category: "shared_with_me" } },
+    // Some versions use this method name
     { api: "SYNO.Foto.Browse.Album", method: "list_shared_with_me", version: 2, extra: {} },
-    { api: "SYNO.Foto.Sharing.Misc", method: "list_shared_with_me", version: 1, extra: {} }
+    { api: "SYNO.Foto.Browse.Album", method: "list_shared_with_me", version: 1, extra: {} },
+    // Sharing API
+    { api: "SYNO.Foto.Sharing.Misc", method: "list_shared_with_me", version: 1, extra: {} },
+    // Try without category filter (list all albums user can access)
+    { api: "SYNO.Foto.Browse.Album", method: "list", version: 2, extra: {} }
   ];
   for (const variant of sharedApiVariants) {
     const variantLabel = `${variant.api}/${variant.method}(v${variant.version})`;
@@ -344,23 +359,28 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
         Helper.ReportingInfo("Debug", "Synology", `${variantLabel}: request failed: ${err.message}`);
         break;
       }
-      if (((_k = synResult.data) == null ? void 0 : _k.success) !== true || !Array.isArray((_m = (_l = synResult.data) == null ? void 0 : _l.data) == null ? void 0 : _m.list)) {
+      if (((_m = synResult.data) == null ? void 0 : _m.success) !== true || !Array.isArray((_o = (_n = synResult.data) == null ? void 0 : _n.data) == null ? void 0 : _o.list)) {
         Helper.ReportingInfo("Debug", "Synology", `${variantLabel}: not available (${JSON.stringify(synResult.data)})`);
         break;
       }
       variantWorked = true;
       const sharedAlbums = synResult.data.data.list;
-      if (sharedAlbums.length === 0)
+      if (sharedAlbums.length === 0) {
+        Helper.ReportingInfo("Debug", "Synology", `${variantLabel}: API works but returned 0 albums`);
         break;
-      const albumNames = sharedAlbums.map((a) => {
-        var _a2;
-        return ((_a2 = a.album) == null ? void 0 : _a2.name) || a.name || "?";
+      }
+      const albumDetails = sharedAlbums.map((a) => {
+        var _a2, _b2, _c2;
+        const name = ((_a2 = a.album) == null ? void 0 : _a2.name) || a.name || "?";
+        const id = ((_b2 = a.album) == null ? void 0 : _b2.id) || a.id || "?";
+        const owner = a.owner_user_id || ((_c2 = a.album) == null ? void 0 : _c2.owner_user_id) || "?";
+        return `"${name}" (ID:${id}, owner:${owner})`;
       }).join(", ");
-      Helper.ReportingInfo("Debug", "Synology", `${variantLabel}: found ${sharedAlbums.length} albums at offset ${sharedOffset}: ${albumNames}`);
+      Helper.ReportingInfo("Debug", "Synology", `${variantLabel}: found ${sharedAlbums.length} albums at offset ${sharedOffset}: ${albumDetails}`);
       for (const entry of sharedAlbums) {
-        const name = ((_n = entry.album) == null ? void 0 : _n.name) || entry.name;
+        const name = ((_p = entry.album) == null ? void 0 : _p.name) || entry.name;
         if (name === albumName) {
-          sharedAlbumId = ((_o = entry.album) == null ? void 0 : _o.id) || entry.id;
+          sharedAlbumId = ((_q = entry.album) == null ? void 0 : _q.id) || entry.id;
           sharedPassphrase = entry.passphrase || "";
           Helper.ReportingInfo("Info", "Synology", `Found album "${albumName}" (ID: ${sharedAlbumId}) via ${variantLabel}`);
           break;
@@ -378,14 +398,14 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
           album_id: sharedAlbumId,
           offset: itemOffset,
           limit: 500,
-          additional: JSON.stringify(["description", "resolution", "orientation", "tag"]),
+          additional: JSON.stringify(["description", "resolution", "orientation", "tag", "thumbnail"]),
           SynoToken: synoToken
         };
         if (sharedPassphrase) {
           params.passphrase = sharedPassphrase;
         }
         const synResult = await synoConnection.get(apiUrl, { params });
-        if (((_p = synResult.data) == null ? void 0 : _p.success) !== true || !Array.isArray((_r = (_q = synResult.data) == null ? void 0 : _q.data) == null ? void 0 : _r.list)) {
+        if (((_r = synResult.data) == null ? void 0 : _r.success) !== true || !Array.isArray((_t = (_s = synResult.data) == null ? void 0 : _s.data) == null ? void 0 : _t.list)) {
           Helper.ReportingError(null, `Error getting pictures from shared album "${albumName}"`, "Synology", "getDsm7AlbumItems/Shared", JSON.stringify(synResult.data), false);
           return;
         }
@@ -398,6 +418,7 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
           if (element.time) {
             PictureDate = synoTimestampToDate(element.time);
           }
+          const cacheKey = ((_v = (_u = element.additional) == null ? void 0 : _u.thumbnail) == null ? void 0 : _v.cache_key) || "";
           imageList.push({
             path: String(element.id),
             url: "",
@@ -405,9 +426,10 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
             info2: "",
             info3: element.filename || "",
             date: PictureDate,
-            x: ((_t = (_s = element.additional) == null ? void 0 : _s.resolution) == null ? void 0 : _t.height) || 0,
-            y: ((_v = (_u = element.additional) == null ? void 0 : _u.resolution) == null ? void 0 : _v.width) || 0,
-            apiNamespace: "SYNO.Foto"
+            x: ((_x = (_w = element.additional) == null ? void 0 : _w.resolution) == null ? void 0 : _x.height) || 0,
+            y: ((_z = (_y = element.additional) == null ? void 0 : _y.resolution) == null ? void 0 : _z.width) || 0,
+            apiNamespace: "SYNO.Foto",
+            cacheKey
           });
         }
         itemOffset += 500;
@@ -417,7 +439,7 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
     if (variantWorked)
       break;
   }
-  Helper.ReportingError(null, `Album "${albumName}" not found in Shared Space, Personal Space, or Shared-with-me`, "Synology", "getDsm7AlbumItems", "", false);
+  Helper.ReportingError(null, `Album "${albumName}" not found. Searched in: Personal Space, Shared Space (Team), and Shared-with-me. Check the debug log for all accessible albums. Make sure the album name matches exactly (case-sensitive).`, "Synology", "getDsm7AlbumItems", "", false);
 }
 async function getDsm7FolderItems(Helper, imageList) {
   const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
@@ -431,7 +453,7 @@ async function getDsm7FolderItems(Helper, imageList) {
     let synEndOfFiles = false;
     let synOffset = 0;
     while (synEndOfFiles === false) {
-      const synURL = `${photoApiUrl}?api=SYNO.FotoTeam.Browse.Item&method=list&version=1&limit=500&item_type=%5B0%5D&additional=%5B%22description%22%2C%22orientation%22%2C%22tag%22%2C%22resolution%22%5D&offset=${synOffset}&SynoToken=${synoToken}&folder_id=${synoFolder.id}`;
+      const synURL = `${photoApiUrl}?api=SYNO.FotoTeam.Browse.Item&method=list&version=1&limit=500&item_type=%5B0%5D&additional=%5B%22description%22%2C%22orientation%22%2C%22tag%22%2C%22resolution%22%2C%22thumbnail%22%5D&offset=${synOffset}&SynoToken=${synoToken}&folder_id=${synoFolder.id}`;
       const synResult = await synoConnection.get(synURL);
       if (synResult.data["success"] === true && Array.isArray(synResult.data["data"]["list"])) {
         if (synResult.data["data"]["list"].length === 0) {
@@ -439,12 +461,13 @@ async function getDsm7FolderItems(Helper, imageList) {
         } else {
           Helper.ReportingInfo("Debug", "Synology", `Folder ${synoFolder.id} has ${synResult.data["data"]["list"].length} pictures`);
           synResult.data["data"]["list"].forEach((element) => {
-            var _a, _b, _c, _d;
+            var _a, _b, _c, _d, _e, _f;
             let PictureDate = null;
             if (element.time) {
               PictureDate = synoTimestampToDate(element.time);
             }
-            imageList.push({ path: String(element.id), url: "", info1: element.description || "", info2: "", info3: element.filename || "", date: PictureDate, x: ((_b = (_a = element.additional) == null ? void 0 : _a.resolution) == null ? void 0 : _b.height) || 0, y: ((_d = (_c = element.additional) == null ? void 0 : _c.resolution) == null ? void 0 : _d.width) || 0, apiNamespace: "SYNO.FotoTeam" });
+            const cacheKey = ((_b = (_a = element.additional) == null ? void 0 : _a.thumbnail) == null ? void 0 : _b.cache_key) || "";
+            imageList.push({ path: String(element.id), url: "", info1: element.description || "", info2: "", info3: element.filename || "", date: PictureDate, x: ((_d = (_c = element.additional) == null ? void 0 : _c.resolution) == null ? void 0 : _d.height) || 0, y: ((_f = (_e = element.additional) == null ? void 0 : _e.resolution) == null ? void 0 : _f.width) || 0, apiNamespace: "SYNO.FotoTeam", cacheKey });
           });
           synOffset = synOffset + 500;
         }
@@ -468,7 +491,7 @@ async function getDsm6Items(Helper, imageList) {
         if (element.info.takendate) {
           PictureDate = new Date(element.info.takendate);
         }
-        imageList.push({ path: element.id, url: "", info1: element.info.title, info2: element.info.description, info3: element.info.name, date: PictureDate, x: element.info.resolutionx, y: element.info.resolutiony, apiNamespace: "" });
+        imageList.push({ path: element.id, url: "", info1: element.info.title, info2: element.info.description, info3: element.info.name, date: PictureDate, x: element.info.resolutionx, y: element.info.resolutiony, apiNamespace: "", cacheKey: "" });
       });
       if (synResult.data["data"]["total"] === synResult.data["data"]["offset"]) {
         synEndOfFiles = true;

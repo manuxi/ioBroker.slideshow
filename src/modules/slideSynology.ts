@@ -15,6 +15,7 @@ export interface SynoPicture{
 	x: number,
 	y: number,
 	apiNamespace: string,
+	cacheKey: string,
 }
 
 export interface SynoPictureListUpdateResult{
@@ -114,12 +115,19 @@ export async function getPicturePrefetch(Helper: GlobalHelper): Promise<void> {
 			// DSM 7 — Synology Photos
 			const apiNs = CurrentImage.apiNamespace || "SYNO.FotoTeam";
 			const photoApiUrl = cachedPhotoApiUrl || `${baseUrl}/photo/webapi/entry.cgi`;
-			synURL = `${photoApiUrl}?api=${apiNs}.Download&method=download&version=1&unit_id=%5B${CurrentImage.path}%5D&force_download=true&SynoToken=${synoToken}`;
+			// Use cache_key for download (required by Synology Photos API)
+			if (CurrentImage.cacheKey) {
+				// Use Thumbnail API with xl size (1280px) for better performance
+				synURL = `${photoApiUrl}?api=${apiNs}.Thumbnail&method=get&version=1&id=${CurrentImage.path}&cache_key=${encodeURIComponent(CurrentImage.cacheKey)}&type=unit&size=xl&SynoToken=${synoToken}`;
+			} else {
+				// Fallback to download API without cache_key
+				synURL = `${photoApiUrl}?api=${apiNs}.Download&method=download&version=1&unit_id=%5B${CurrentImage.path}%5D&force_download=true&SynoToken=${synoToken}`;
+			}
 		} else {
 			// DSM 6 — PhotoStation
 			synURL = `${baseUrl}/photo/webapi/download.php?api=SYNO.PhotoStation.Download&method=getphoto&version=1&id=${CurrentImage.path}&download=true`;
 		}
-		Helper.ReportingInfo("Debug", "Synology", `Downloading picture ${CurrentImage.info3} (ID ${CurrentImage.path})`);
+		Helper.ReportingInfo("Debug", "Synology", `Downloading picture ${CurrentImage.info3} (ID ${CurrentImage.path}, cacheKey: ${CurrentImage.cacheKey || "none"})`);
 		const synResult = await synoConnection.get<any>(synURL,{responseType: "arraybuffer"});
 		const PicContentB64 = synResult.data.toString("base64");
 		CurrentPicture = { ...CurrentImage, url: `data:image/jpeg;base64,${PicContentB64}` };
@@ -274,9 +282,10 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 		return;
 	}
 
-	// Search for the album in shared space first, then personal space
-	for (const apiNs of ["SYNO.FotoTeam", "SYNO.Foto"]) {
-		const spaceName = apiNs === "SYNO.FotoTeam" ? "Shared Space" : "Personal Space";
+	// Search for the album in personal space first (where shared-with-me albums appear), then shared space
+	// Note: When another user shares an album with you, it typically appears via SYNO.Foto (Personal Space API)
+	for (const apiNs of ["SYNO.Foto", "SYNO.FotoTeam"]) {
+		const spaceName = apiNs === "SYNO.FotoTeam" ? "Shared Space (Team)" : "Personal Space (includes shared-with-me)";
 		Helper.ReportingInfo("Debug", "Synology", `Searching for album "${albumName}" in ${spaceName}`);
 
 		let albumId: number | null = null;
@@ -310,7 +319,9 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 				break;
 			}
 
-			Helper.ReportingInfo("Debug", "Synology", `${spaceName}: found ${albums.length} albums at offset ${offset}: ${albums.map((a: any) => a.name).join(", ")}`);
+			// Log all album names with their IDs for debugging
+			const albumDetails = albums.map((a: any) => `"${a.name}" (ID:${a.id}, shared:${a.shared || false})`).join(", ");
+			Helper.ReportingInfo("Debug", "Synology", `${spaceName}: found ${albums.length} albums at offset ${offset}: ${albumDetails}`);
 
 			const found = albums.find((a: any) => a.name === albumName);
 			if (found) {
@@ -335,7 +346,7 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 					album_id: albumId,
 					offset: itemOffset,
 					limit: 500,
-					additional: JSON.stringify(["description", "resolution", "orientation", "tag"]),
+					additional: JSON.stringify(["description", "resolution", "orientation", "tag", "thumbnail"]),
 					SynoToken: synoToken
 				}
 			});
@@ -355,6 +366,8 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 				if (element.time) {
 					PictureDate = synoTimestampToDate(element.time);
 				}
+				// Extract cache_key from thumbnail additional data (required for download)
+				const cacheKey = element.additional?.thumbnail?.cache_key || "";
 				imageList.push({
 					path: String(element.id),
 					url: "",
@@ -364,7 +377,8 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 					date: PictureDate,
 					x: element.additional?.resolution?.height || 0,
 					y: element.additional?.resolution?.width || 0,
-					apiNamespace: apiNs
+					apiNamespace: apiNs,
+					cacheKey: cacheKey
 				});
 			}
 
@@ -378,10 +392,20 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 	// Third: search in "Shared with me" albums — try multiple known API variants
 	Helper.ReportingInfo("Debug", "Synology", `Searching for album "${albumName}" in Shared-with-me albums`);
 
+	// Different API variants that might work for "shared with me" albums
+	// The correct one depends on Synology Photos version
 	const sharedApiVariants = [
+		// Most common: list with shared_with_me category
 		{ api: "SYNO.Foto.Browse.Album", method: "list", version: 2, extra: { category: "shared_with_me" } },
+		// Alternative: list all and filter by shared flag
+		{ api: "SYNO.Foto.Browse.Album", method: "list", version: 1, extra: { category: "shared_with_me" } },
+		// Some versions use this method name
 		{ api: "SYNO.Foto.Browse.Album", method: "list_shared_with_me", version: 2, extra: {} },
+		{ api: "SYNO.Foto.Browse.Album", method: "list_shared_with_me", version: 1, extra: {} },
+		// Sharing API
 		{ api: "SYNO.Foto.Sharing.Misc", method: "list_shared_with_me", version: 1, extra: {} },
+		// Try without category filter (list all albums user can access)
+		{ api: "SYNO.Foto.Browse.Album", method: "list", version: 2, extra: {} },
 	];
 
 	for (const variant of sharedApiVariants) {
@@ -417,10 +441,19 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 
 			variantWorked = true;
 			const sharedAlbums = synResult.data.data.list;
-			if (sharedAlbums.length === 0) break;
+			if (sharedAlbums.length === 0) {
+				Helper.ReportingInfo("Debug", "Synology", `${variantLabel}: API works but returned 0 albums`);
+				break;
+			}
 
-			const albumNames = sharedAlbums.map((a: any) => a.album?.name || a.name || "?").join(", ");
-			Helper.ReportingInfo("Debug", "Synology", `${variantLabel}: found ${sharedAlbums.length} albums at offset ${sharedOffset}: ${albumNames}`);
+			// Log detailed album info for debugging
+			const albumDetails = sharedAlbums.map((a: any) => {
+				const name = a.album?.name || a.name || "?";
+				const id = a.album?.id || a.id || "?";
+				const owner = a.owner_user_id || a.album?.owner_user_id || "?";
+				return `"${name}" (ID:${id}, owner:${owner})`;
+			}).join(", ");
+			Helper.ReportingInfo("Debug", "Synology", `${variantLabel}: found ${sharedAlbums.length} albums at offset ${sharedOffset}: ${albumDetails}`);
 
 			for (const entry of sharedAlbums) {
 				const name = entry.album?.name || entry.name;
@@ -446,7 +479,7 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 					album_id: sharedAlbumId,
 					offset: itemOffset,
 					limit: 500,
-					additional: JSON.stringify(["description", "resolution", "orientation", "tag"]),
+					additional: JSON.stringify(["description", "resolution", "orientation", "tag", "thumbnail"]),
 					SynoToken: synoToken
 				};
 				if (sharedPassphrase) {
@@ -470,6 +503,8 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 					if (element.time) {
 						PictureDate = synoTimestampToDate(element.time);
 					}
+					// Extract cache_key from thumbnail additional data (required for download)
+					const cacheKey = element.additional?.thumbnail?.cache_key || "";
 					imageList.push({
 						path: String(element.id),
 						url: "",
@@ -479,7 +514,8 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 						date: PictureDate,
 						x: element.additional?.resolution?.height || 0,
 						y: element.additional?.resolution?.width || 0,
-						apiNamespace: "SYNO.Foto"
+						apiNamespace: "SYNO.Foto",
+						cacheKey: cacheKey
 					});
 				}
 
@@ -492,7 +528,7 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 		if (variantWorked) break;
 	}
 
-	Helper.ReportingError(null, `Album "${albumName}" not found in Shared Space, Personal Space, or Shared-with-me`, "Synology", "getDsm7AlbumItems", "", false);
+	Helper.ReportingError(null, `Album "${albumName}" not found. Searched in: Personal Space, Shared Space (Team), and Shared-with-me. Check the debug log for all accessible albums. Make sure the album name matches exactly (case-sensitive).`, "Synology", "getDsm7AlbumItems", "", false);
 }
 
 /**
@@ -512,7 +548,8 @@ async function getDsm7FolderItems(Helper: GlobalHelper, imageList: SynoPicture[]
 		let synEndOfFiles = false;
 		let synOffset = 0;
 		while (synEndOfFiles === false){
-			const synURL = `${photoApiUrl}?api=SYNO.FotoTeam.Browse.Item&method=list&version=1&limit=500&item_type=%5B0%5D&additional=%5B%22description%22%2C%22orientation%22%2C%22tag%22%2C%22resolution%22%5D&offset=${synOffset}&SynoToken=${synoToken}&folder_id=${synoFolder.id}`;
+			// Include "thumbnail" in additional to get cache_key for download
+			const synURL = `${photoApiUrl}?api=SYNO.FotoTeam.Browse.Item&method=list&version=1&limit=500&item_type=%5B0%5D&additional=%5B%22description%22%2C%22orientation%22%2C%22tag%22%2C%22resolution%22%2C%22thumbnail%22%5D&offset=${synOffset}&SynoToken=${synoToken}&folder_id=${synoFolder.id}`;
 			const synResult = await (synoConnection.get<any>(synURL));
 			if (synResult.data["success"] === true && Array.isArray(synResult.data["data"]["list"])){
 				if (synResult.data["data"]["list"].length === 0){
@@ -524,7 +561,9 @@ async function getDsm7FolderItems(Helper: GlobalHelper, imageList: SynoPicture[]
 						if (element.time){
 							PictureDate = synoTimestampToDate(element.time);
 						}
-						imageList.push( {path: String(element.id), url: "", info1: element.description || "", info2: "", info3: element.filename || "", date: PictureDate, x: element.additional?.resolution?.height || 0, y: element.additional?.resolution?.width || 0, apiNamespace: "SYNO.FotoTeam" } );
+						// Extract cache_key from thumbnail additional data (required for download)
+						const cacheKey = element.additional?.thumbnail?.cache_key || "";
+						imageList.push( {path: String(element.id), url: "", info1: element.description || "", info2: "", info3: element.filename || "", date: PictureDate, x: element.additional?.resolution?.height || 0, y: element.additional?.resolution?.width || 0, apiNamespace: "SYNO.FotoTeam", cacheKey: cacheKey } );
 					});
 					synOffset = synOffset + 500;
 				}
@@ -553,7 +592,8 @@ async function getDsm6Items(Helper: GlobalHelper, imageList: SynoPicture[]): Pro
 				if (element.info.takendate){
 					PictureDate = new Date(element.info.takendate);
 				}
-				imageList.push( {path: element.id, url: "", info1: element.info.title, info2: element.info.description, info3: element.info.name, date: PictureDate, x: element.info.resolutionx, y: element.info.resolutiony, apiNamespace: "" } );
+				// DSM6 doesn't use cache_key - leave empty
+				imageList.push( {path: element.id, url: "", info1: element.info.title, info2: element.info.description, info3: element.info.name, date: PictureDate, x: element.info.resolutionx, y: element.info.resolutiony, apiNamespace: "", cacheKey: "" } );
 			});
 			if (synResult.data["data"]["total"] === synResult.data["data"]["offset"]){
 				synEndOfFiles = true;
