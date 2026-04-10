@@ -332,7 +332,6 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
         api: `${itemApiNs}.Browse.Item`,
         method: "list",
         version: 1,
-        album_id: albumId,
         offset: itemOffset,
         limit: 500,
         additional: JSON.stringify(["description", "resolution", "orientation", "tag", "thumbnail"]),
@@ -340,6 +339,8 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
       };
       if (albumPassphrase) {
         params.passphrase = albumPassphrase;
+      } else {
+        params.album_id = albumId;
       }
       const synResult = await synoConnection.get(apiUrl, { params });
       if (((_d = synResult.data) == null ? void 0 : _d.success) !== true || !Array.isArray((_f = (_e = synResult.data) == null ? void 0 : _e.data) == null ? void 0 : _f.list)) {

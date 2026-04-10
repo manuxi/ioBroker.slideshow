@@ -412,14 +412,17 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 				api: `${itemApiNs}.Browse.Item`,
 				method: "list",
 				version: 1,
-				album_id: albumId,
 				offset: itemOffset,
 				limit: 500,
 				additional: JSON.stringify(["description", "resolution", "orientation", "tag", "thumbnail"]),
 				SynoToken: synoToken
 			};
+			
 			if (albumPassphrase) {
+				// Passphrase uniquely identifies the album. Sending both album_id and passphrase causes Code 120 (Invalid Condition)
 				params.passphrase = albumPassphrase;
+			} else {
+				params.album_id = albumId;
 			}
 
 			const synResult = await synoConnection.get<any>(apiUrl, { params });
