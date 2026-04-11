@@ -22,7 +22,7 @@ export interface FSPictureListUpdateResult{
 let CurrentImages: FSPicture[];
 let CurrentImage: FSPicture;
 
-export async function getPicture(Helper: GlobalHelper): Promise<FSPicture | null> {
+export async function getPicture(Helper: GlobalHelper, direction: 1 | -1 = 1): Promise<FSPicture | null> {
 	try{
 		if (CurrentImages.length === 0){
 			await updatePictureList(Helper);
@@ -31,10 +31,13 @@ export async function getPicture(Helper: GlobalHelper): Promise<FSPicture | null
 			if (!CurrentImage){
 				CurrentImage = CurrentImages[0];
 			} else {
-				if (CurrentImages.indexOf(CurrentImage) === CurrentImages.length - 1){
+				const idx = CurrentImages.indexOf(CurrentImage);
+				if (idx === -1){
 					CurrentImage = CurrentImages[0];
 				} else {
-					CurrentImage = CurrentImages[CurrentImages.indexOf(CurrentImage) + 1];
+					const len = CurrentImages.length;
+					const nextIdx = (idx + direction + len) % len;
+					CurrentImage = CurrentImages[nextIdx];
 				}
 			}
 			if (fs.existsSync(CurrentImage.path) === true){

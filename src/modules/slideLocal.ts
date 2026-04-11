@@ -19,7 +19,7 @@ export interface LocalPictureListUpdateResult{
 let CurrentImages: LocalPicture[];
 let CurrentImage: LocalPicture;
 
-export async function getPicture(Helper: GlobalHelper): Promise<LocalPicture | null> {
+export async function getPicture(Helper: GlobalHelper, direction: 1 | -1 = 1): Promise<LocalPicture | null> {
 	try{
 		if (CurrentImages.length === 0){
 			await updatePictureList(Helper);
@@ -28,10 +28,13 @@ export async function getPicture(Helper: GlobalHelper): Promise<LocalPicture | n
 			if (!CurrentImage){
 				CurrentImage = CurrentImages[0];
 			} else {
-				if (CurrentImages.indexOf(CurrentImage) === CurrentImages.length - 1){
+				const idx = CurrentImages.indexOf(CurrentImage);
+				if (idx === -1){
 					CurrentImage = CurrentImages[0];
 				} else {
-					CurrentImage = CurrentImages[CurrentImages.indexOf(CurrentImage) + 1];
+					const len = CurrentImages.length;
+					const nextIdx = (idx + direction + len) % len;
+					CurrentImage = CurrentImages[nextIdx];
 				}
 			}
 			return CurrentImage;

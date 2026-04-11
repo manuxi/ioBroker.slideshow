@@ -56,6 +56,7 @@ synoConnection.interceptors.request.use((config) => {
 let CurrentImages;
 let CurrentImage;
 let CurrentPicture;
+let PrefetchDirection = 1;
 let cachedPhotoApiUrl = "";
 function getBaseUrl(synoPath) {
   if (synoPath.startsWith("http://") || synoPath.startsWith("https://")) {
@@ -69,32 +70,39 @@ function synoTimestampToDate(time) {
   }
   return new Date(time * 1e3);
 }
-async function getPicture(Helper) {
+async function getPicture(Helper, direction = 1) {
   try {
+    if (CurrentPicture && direction !== PrefetchDirection) {
+      CurrentPicture = void 0;
+    }
     if (!CurrentPicture) {
-      await getPicturePrefetch(Helper);
+      await getPicturePrefetch(Helper, direction);
     }
     const CurrentPictureResult = CurrentPicture;
-    getPicturePrefetch(Helper);
+    getPicturePrefetch(Helper, direction);
     return CurrentPictureResult;
   } catch (err) {
     Helper.ReportingError(err, "Unknown Error", "Synology", "getPicture");
     return null;
   }
 }
-async function getPicturePrefetch(Helper) {
+async function getPicturePrefetch(Helper, direction = 1) {
   var _a;
   try {
     if (CurrentImages.length !== 0) {
       if (!CurrentImage) {
         CurrentImage = CurrentImages[0];
       } else {
-        if (CurrentImages.indexOf(CurrentImage) === CurrentImages.length - 1) {
+        const idx = CurrentImages.indexOf(CurrentImage);
+        if (idx === -1) {
           CurrentImage = CurrentImages[0];
         } else {
-          CurrentImage = CurrentImages[CurrentImages.indexOf(CurrentImage) + 1];
+          const len = CurrentImages.length;
+          const nextIdx = (idx + direction + len) % len;
+          CurrentImage = CurrentImages[nextIdx];
         }
       }
+      PrefetchDirection = direction;
     }
   } catch (err) {
     Helper.ReportingError(err, "Unknown Error", "Synology", "getPicturePrefetch/Select");

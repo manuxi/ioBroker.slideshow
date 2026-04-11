@@ -64,6 +64,9 @@ synoConnection.interceptors.request.use(config => {
 let CurrentImages: SynoPicture[];
 let CurrentImage: SynoPicture;
 let CurrentPicture: SynoPicture;
+// Direction used when CurrentPicture was prefetched. When a caller asks for a
+// different direction, the cached prefetch is stale and must be discarded.
+let PrefetchDirection: 1 | -1 = 1;
 
 // Cache for discovered Photo API URL (declared early so getPicturePrefetch can read it)
 let cachedPhotoApiUrl = "";
@@ -92,13 +95,20 @@ function synoTimestampToDate(time: number): Date {
 	return new Date(time * 1000);
 }
 
-export async function getPicture(Helper: GlobalHelper): Promise<SynoPicture | null> {
+export async function getPicture(Helper: GlobalHelper, direction: 1 | -1 = 1): Promise<SynoPicture | null> {
 	try {
+		// Invalidate prefetch if the caller wants a different direction than
+		// what the cached prefetch advanced toward.
+		if (CurrentPicture && direction !== PrefetchDirection) {
+			CurrentPicture = undefined as unknown as SynoPicture;
+		}
 		if (!CurrentPicture) {
-			await getPicturePrefetch(Helper);
+			await getPicturePrefetch(Helper, direction);
 		}
 		const CurrentPictureResult = CurrentPicture;
-		getPicturePrefetch(Helper);
+		// Speculatively prefetch the next picture in the same direction so the
+		// following call returns immediately.
+		getPicturePrefetch(Helper, direction);
 		return CurrentPictureResult;
 	} catch (err) {
 		Helper.ReportingError(err as Error, "Unknown Error", "Synology", "getPicture");
@@ -106,19 +116,23 @@ export async function getPicture(Helper: GlobalHelper): Promise<SynoPicture | nu
 	}
 }
 
-export async function getPicturePrefetch(Helper: GlobalHelper): Promise<void> {
+export async function getPicturePrefetch(Helper: GlobalHelper, direction: 1 | -1 = 1): Promise<void> {
 	// Select Image from list
 	try {
 		if (CurrentImages.length !== 0) {
 			if (!CurrentImage) {
 				CurrentImage = CurrentImages[0];
 			} else {
-				if (CurrentImages.indexOf(CurrentImage) === CurrentImages.length - 1) {
+				const idx = CurrentImages.indexOf(CurrentImage);
+				if (idx === -1) {
 					CurrentImage = CurrentImages[0];
 				} else {
-					CurrentImage = CurrentImages[CurrentImages.indexOf(CurrentImage) + 1];
+					const len = CurrentImages.length;
+					const nextIdx = (idx + direction + len) % len;
+					CurrentImage = CurrentImages[nextIdx];
 				}
 			}
+			PrefetchDirection = direction;
 		}
 	} catch (err) {
 		Helper.ReportingError(err as Error, "Unknown Error", "Synology", "getPicturePrefetch/Select");

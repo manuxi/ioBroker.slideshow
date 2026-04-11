@@ -403,6 +403,50 @@ $.extend(
 		"PictureBlurAmount_tooltip": {
 			"en": "Blur radius for the background image in pixels (0 = no blur)",
 			"de": "Weichzeichnungs-Radius für das Hintergrundbild in Pixeln (0 = kein Blur)"
+		},
+		"group_overlays": {
+			"en": "Overlays",
+			"de": "Overlays"
+		},
+		"OverlayNavi": {
+			"en": "Navigation arrows",
+			"de": "Navigationspfeile"
+		},
+		"OverlayNavi_tooltip": {
+			"en": "Show subtle prev/next arrows on the picture. Tapping an arrow does not toggle fullscreen.",
+			"de": "Zeigt dezente Vor/Zurück-Pfeile auf dem Bild. Ein Tipp auf den Pfeil schaltet nicht den Vollbildmodus um."
+		},
+		"OverlayProgress": {
+			"en": "Progress bar",
+			"de": "Fortschrittsbalken"
+		},
+		"OverlayProgress_tooltip": {
+			"en": "Show a thin bar at the bottom that fills until the next automatic picture change.",
+			"de": "Zeigt einen dünnen Balken am unteren Rand, der bis zum nächsten automatischen Bildwechsel aufgefüllt wird."
+		},
+		"OverlayInfo": {
+			"en": "Picture info overlay",
+			"de": "Bildinformationen-Overlay"
+		},
+		"OverlayInfo_tooltip": {
+			"en": "Show info1/info2/album/date as a gradient overlay at the bottom of the picture.",
+			"de": "Zeigt info1/info2/Album/Datum als Gradient-Overlay am unteren Rand des Bildes an."
+		},
+		"none": {
+			"en": "off",
+			"de": "aus"
+		},
+		"normal": {
+			"en": "normal only",
+			"de": "nur normal"
+		},
+		"fullscreen": {
+			"en": "fullscreen only",
+			"de": "nur Vollbild"
+		},
+		"both": {
+			"en": "normal + fullscreen",
+			"de": "normal + Vollbild"
 		}
 	}
 );
@@ -474,10 +518,12 @@ vis.binds["slideshow"] = {
 		console.log(`Integrating Slideshow for widget #${widgetID}`);
 		let FadeTime = parseInt(data.FadeTime) || 0;
 
+		// Instance namespace derived once from data.oid (e.g. "slideshow.0.picture" -> "slideshow.0")
+		const instanceNs = data.oid ? data.oid.split(".").slice(0, 2).join(".") : "";
+
 		// Heartbeat: tell the adapter that a VIS view with a slideshow widget is active.
 		// One global interval per page handles all slideshow widgets.
 		if (data.oid && !vis.editMode) {
-			const instanceNs = data.oid.split(".").slice(0, 2).join(".");
 			const heartbeatStateId = `${instanceNs}.vis_heartbeat`;
 			const sendHeartbeat = function () {
 				if ($(".slideshow-class").length === 0) {
@@ -503,6 +549,81 @@ vis.binds["slideshow"] = {
 			const raw = parseFloat(data.PictureBlurAmount);
 			const amount = isNaN(raw) ? 20 : Math.max(0, raw);
 			$(`#${widgetID} .slideshowpicture_bg`).css("filter", `blur(${amount}px)`);
+		}
+
+		function overlayMatches(setting) {
+			if (!setting || setting === "none") return false;
+			const isFs = $(`#${widgetID}`).hasClass("slideshow-fullscreen");
+			if (setting === "both") return true;
+			if (setting === "normal") return !isFs;
+			if (setting === "fullscreen") return isFs;
+			return false;
+		}
+
+		function applyOverlayVisibility() {
+			const showNavi = overlayMatches(data.OverlayNavi);
+			const showProgress = overlayMatches(data.OverlayProgress);
+			const showInfo = overlayMatches(data.OverlayInfo);
+			$(`#${widgetID} .slideshow-navi`).css("display", showNavi ? "block" : "none");
+			$(`#${widgetID} .slideshow-progress`).css("display", showProgress ? "block" : "none");
+			$(`#${widgetID} .slideshow-info`).css("display", showInfo ? "block" : "none");
+			$(`#${widgetID} .slideshow-info`).toggleClass("has-progress", showProgress && showInfo);
+		}
+
+		function resetProgressBar() {
+			const $bar = $(`#${widgetID} .slideshow-progress-bar`);
+			if ($bar.length === 0) return;
+			// The interval may change at runtime; prefer a live state over data.
+			let intervalMs = 0;
+			if (instanceNs && vis.states && vis.states[`${instanceNs}.info.update_interval_ms.val`]) {
+				intervalMs = parseInt(vis.states[`${instanceNs}.info.update_interval_ms.val`], 10) || 0;
+			}
+			if (intervalMs <= 0) {
+				// Fallback: keep the bar empty if the interval is unknown.
+				$bar.css({ "transition": "none", "width": "0%" });
+				return;
+			}
+			// Snap back to 0% without animating, then run a linear fill to 100%.
+			$bar.css({ "transition": "none", "width": "0%" });
+			// Force reflow so the next transition picks up the new starting width.
+			void $bar[0].offsetWidth;
+			$bar.css({
+				"transition": `width ${intervalMs}ms linear`,
+				"width": "100%"
+			});
+		}
+
+		function updateInfoOverlay() {
+			if (!instanceNs) return;
+			const info1 = vis.states[`${instanceNs}.info1.val`] || "";
+			const info2 = vis.states[`${instanceNs}.info2.val`] || "";
+			const info3 = vis.states[`${instanceNs}.info3.val`] || "";
+			const album = vis.states[`${instanceNs}.info_album.val`] || "";
+			const dateRaw = vis.states[`${instanceNs}.date.val`];
+			let dateStr = "";
+			if (dateRaw) {
+				try {
+					const d = new Date(typeof dateRaw === "number" ? dateRaw : parseInt(dateRaw, 10));
+					if (!isNaN(d.getTime())) {
+						dateStr = d.toLocaleDateString();
+					}
+				} catch (e) { /* ignore */ }
+			}
+			$(`#${widgetID} .slideshow-info-title`).text(info1);
+			$(`#${widgetID} .slideshow-info-subtitle`).text(info2 || info3);
+			const metaParts = [];
+			if (album) metaParts.push(album);
+			if (dateStr) metaParts.push(dateStr);
+			$(`#${widgetID} .slideshow-info-meta`).text(metaParts.join(" • "));
+		}
+
+		function sendControl(command) {
+			if (!instanceNs) return;
+			try {
+				vis.conn.setState(`${instanceNs}.control_${command}`, true);
+			} catch (e) {
+				if (data.Debug === true) { console.error("Slideshow control send failed:", e); }
+			}
 		}
 
 		function swapPicture(src) {
@@ -599,7 +720,13 @@ vis.binds["slideshow"] = {
 
 			// Preload the image once; both fg and bg will read it from the browser cache
 			const preload = new Image();
-			const apply = function () { swapPicture(preload.src); };
+			const apply = function () {
+				swapPicture(preload.src);
+				// Info overlay content may have changed too — re-read from states.
+				updateInfoOverlay();
+				// Restart the progress animation for the next interval.
+				resetProgressBar();
+			};
 			preload.addEventListener("load", apply);
 			preload.addEventListener("error", function () {
 				if (data.Debug === true) { console.error("Slideshow: failed to preload picture", preload.src); }
@@ -609,6 +736,8 @@ vis.binds["slideshow"] = {
 		}
 
 		$div.on('click touchend', function (e) {
+			// Clicks on navi arrows are handled by their own delegated handlers.
+			if ($(e.target).closest(".slideshow-navi").length > 0) return;
 			// Protect against two events
 			if (vis.detectBounce(this)) return;
 			if (vis.editMode) return;
@@ -617,13 +746,14 @@ vis.binds["slideshow"] = {
 			if (data.EnableFullscreenToggle === true) {
 				const $w = $(`#${widgetID}`);
 				$w.toggleClass("slideshow-fullscreen");
-				// Re-apply fit on next frame so object-fit/scale adjust to the new container size
+				// Re-apply fit + overlay visibility on next frame
 				requestAnimationFrame(function () {
 					Array.from($(`#${widgetID} .slideshowpicture`)).forEach(image => {
 						if (image.complete && image.naturalWidth > 0) {
 							SlideShowFitImage(image, widgetID);
 						}
 					});
+					applyOverlayVisibility();
 				});
 				return;
 			}
@@ -633,6 +763,24 @@ vis.binds["slideshow"] = {
 			} else if (data.AutoViewNavTarget === "TargetDefined" && data.AutoViewTarget) {
 				vis.changeView(data.AutoViewTarget);
 			}
+		});
+
+		// Arrow click handlers — do not propagate to the widget click handler so
+		// they never toggle fullscreen. Stop immediate propagation to be safe with
+		// both click and touchend on top-level $div.
+		$div.on('click touchend', '.slideshow-navi-left', function (e) {
+			if (vis.editMode) return;
+			e.stopPropagation();
+			if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
+			if (vis.detectBounce(this)) return;
+			sendControl("previous");
+		});
+		$div.on('click touchend', '.slideshow-navi-right', function (e) {
+			if (vis.editMode) return;
+			e.stopPropagation();
+			if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
+			if (vis.detectBounce(this)) return;
+			sendControl("next");
 		});
 
 		Array.from($(`#${widgetID} .slideshowpicture`)).forEach(image => {
@@ -690,6 +838,21 @@ vis.binds["slideshow"] = {
 
 		if (data.oid) {
 			vis.states.bind(data.oid + ".val", onChange);
+		}
+
+		// Overlay initial state + bindings for info1/info2/info3/album/date
+		applyOverlayVisibility();
+		if (instanceNs) {
+			const onInfoStateChange = function () { updateInfoOverlay(); };
+			vis.states.bind(`${instanceNs}.info1.val`, onInfoStateChange);
+			vis.states.bind(`${instanceNs}.info2.val`, onInfoStateChange);
+			vis.states.bind(`${instanceNs}.info3.val`, onInfoStateChange);
+			vis.states.bind(`${instanceNs}.info_album.val`, onInfoStateChange);
+			vis.states.bind(`${instanceNs}.date.val`, onInfoStateChange);
+			// Restart the progress bar if the adapter updates the interval at runtime.
+			vis.states.bind(`${instanceNs}.info.update_interval_ms.val`, function () { resetProgressBar(); });
+			updateInfoOverlay();
+			resetProgressBar();
 		}
 		if (data.SlideshowEffect === "EffectFade") {
 			$(`#${widgetID} .slideshowpicture2`).css("display", "none");

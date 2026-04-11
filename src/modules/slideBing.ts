@@ -34,7 +34,7 @@ const BingUrl = "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=10&m
 let BingPictureList: BingPicture[];
 let CurrentImage: BingPicture;
 
-export async function getPicture(Helper: GlobalHelper): Promise<BingPicture | null > {
+export async function getPicture(Helper: GlobalHelper, direction: 1 | -1 = 1): Promise<BingPicture | null > {
 	try{
 		if (BingPictureList.length === 0){
 			await updatePictureList(Helper);
@@ -43,10 +43,13 @@ export async function getPicture(Helper: GlobalHelper): Promise<BingPicture | nu
 			if (!CurrentImage){
 				CurrentImage = BingPictureList[0];
 			} else {
-				if (BingPictureList.indexOf(CurrentImage) === BingPictureList.length - 1){
+				const idx = BingPictureList.indexOf(CurrentImage);
+				if (idx === -1){
 					CurrentImage = BingPictureList[0];
 				} else {
-					CurrentImage = BingPictureList[BingPictureList.indexOf(CurrentImage) + 1];
+					const len = BingPictureList.length;
+					const nextIdx = (idx + direction + len) % len;
+					CurrentImage = BingPictureList[nextIdx];
 				}
 			}
 			return CurrentImage;

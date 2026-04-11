@@ -60,3 +60,95 @@
 	z-index: 9999 !important;
 	background: #000;
 }
+
+/* Navigation arrows */
+.slideshow-navi {
+	position: absolute;
+	top: 50%;
+	transform: translateY(-50%);
+	z-index: 10;
+	color: rgba(255, 255, 255, 0.6);
+	font-size: 48px;
+	line-height: 1;
+	padding: 12px 18px;
+	cursor: pointer;
+	user-select: none;
+	text-shadow: 0 0 8px rgba(0, 0, 0, 0.8);
+	transition: color 0.2s;
+	pointer-events: auto;
+}
+
+.slideshow-navi:hover {
+	color: rgba(255, 255, 255, 1);
+}
+
+.slideshow-navi-left {
+	left: 8px;
+}
+
+.slideshow-navi-right {
+	right: 8px;
+}
+
+/* Progress bar */
+.slideshow-progress {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 4px;
+	background: rgba(0, 0, 0, 0.35);
+	z-index: 10;
+	pointer-events: none;
+}
+
+.slideshow-progress-bar {
+	height: 100%;
+	width: 0%;
+	background: rgba(255, 255, 255, 0.85);
+	transition-property: width;
+	transition-timing-function: linear;
+}
+
+/* Picture info overlay */
+.slideshow-info {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	padding: 18px 24px 22px 24px;
+	z-index: 10;
+	color: #fff;
+	font-family: sans-serif;
+	text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+	background: linear-gradient(to top, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0));
+	pointer-events: none;
+}
+
+.slideshow-info-line {
+	line-height: 1.25;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.slideshow-info-title {
+	font-size: 18px;
+	font-weight: 600;
+}
+
+.slideshow-info-subtitle {
+	font-size: 14px;
+	opacity: 0.9;
+}
+
+.slideshow-info-meta {
+	font-size: 12px;
+	opacity: 0.75;
+	margin-top: 2px;
+}
+
+/* When progress bar is present alongside info overlay, lift the info slightly */
+.slideshow-info.has-progress {
+	bottom: 4px;
+}

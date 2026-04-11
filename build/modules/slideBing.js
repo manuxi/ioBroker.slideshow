@@ -36,7 +36,7 @@ var import_axios = __toESM(require("axios"));
 const BingUrl = "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=10&mkt=de-DE";
 let BingPictureList;
 let CurrentImage;
-async function getPicture(Helper) {
+async function getPicture(Helper, direction = 1) {
   try {
     if (BingPictureList.length === 0) {
       await updatePictureList(Helper);
@@ -45,10 +45,13 @@ async function getPicture(Helper) {
       if (!CurrentImage) {
         CurrentImage = BingPictureList[0];
       } else {
-        if (BingPictureList.indexOf(CurrentImage) === BingPictureList.length - 1) {
+        const idx = BingPictureList.indexOf(CurrentImage);
+        if (idx === -1) {
           CurrentImage = BingPictureList[0];
         } else {
-          CurrentImage = BingPictureList[BingPictureList.indexOf(CurrentImage) + 1];
+          const len = BingPictureList.length;
+          const nextIdx = (idx + direction + len) % len;
+          CurrentImage = BingPictureList[nextIdx];
         }
       }
       return CurrentImage;

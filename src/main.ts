@@ -14,6 +14,9 @@ let Helper: GlobalHelper;
 const MsgErrUnknown = "Unknown Error";
 let UpdateRunning = false;
 let ControlPlay = true;
+// Reentrancy guard for updateCurrentPictureTimer. Rapid manual prev/next
+// requests can interleave with in-flight picture loads; serialize them.
+let CurrentPictureRunning = false;
 
 // If no VIS heartbeat is seen within this window, treat the VIS view as inactive
 // and skip picture loading. Heartbeats fire every 15s from the widget.
@@ -108,6 +111,50 @@ class Slideshow extends utils.Adapter {
 				native: {},
 			});
 			await this.setStateAsync("control_stop", false, true);
+			// Create button for previous picture
+			await this.setObjectNotExistsAsync("control_previous", {
+				type: "state",
+				common: {
+					name: "control_previous",
+					type: "boolean",
+					role: "button",
+					read: true,
+					write: true,
+					desc: "Show previous picture",
+					def: false
+				},
+				native: {},
+			});
+			await this.setStateAsync("control_previous", false, true);
+			// Create button for next picture
+			await this.setObjectNotExistsAsync("control_next", {
+				type: "state",
+				common: {
+					name: "control_next",
+					type: "boolean",
+					role: "button",
+					read: true,
+					write: true,
+					desc: "Show next picture",
+					def: false
+				},
+				native: {},
+			});
+			await this.setStateAsync("control_next", false, true);
+			// Expose the cycling interval in ms so the widget can drive a progress bar
+			await this.setObjectNotExistsAsync("info.update_interval_ms", {
+				type: "state",
+				common: {
+					name: "info.update_interval_ms",
+					type: "number",
+					role: "value.interval",
+					read: true,
+					write: false,
+					desc: "Current picture cycling interval in milliseconds"
+				},
+				native: {},
+			});
+			await this.setStateAsync("info.update_interval_ms", { val: this.config.update_interval * 1000, ack: true });
 			// Create State for State
 			await this.setObjectNotExistsAsync("state", {
 				type: "state",
@@ -200,6 +247,16 @@ class Slideshow extends utils.Adapter {
 					await this.setStateAsync("state", { val: "play", ack: true });
 					await this.setStateAsync("control_play", false, false);
 				}
+			}
+			if (id === `${this.namespace}.control_previous` && state?.val === true && state?.ack === false){
+				await this.setStateAsync("control_previous", false, false);
+				await this.triggerManualNav(-1);
+				return;
+			}
+			if (id === `${this.namespace}.control_next` && state?.val === true && state?.ack === false){
+				await this.setStateAsync("control_next", false, false);
+				await this.triggerManualNav(1);
+				return;
 			}
 			if (id === `${this.namespace}.control_stop` && state?.val === true && state?.ack === false){
 				if (ControlPlay === true){
@@ -352,10 +409,34 @@ class Slideshow extends utils.Adapter {
 		UpdateRunning = false;
 	}
 
-	private async updateCurrentPictureTimer(): Promise<void>{
+	/**
+	 * Manual prev/next navigation from VIS widget or a control state.
+	 * Bumps the heartbeat (so a pause state doesn't swallow the input),
+	 * cancels the running timer, and advances the picture in the given
+	 * direction. Reschedules only if the slideshow is currently playing.
+	 */
+	private async triggerManualNav(direction: 1 | -1): Promise<void> {
+		Helper.ReportingInfo("Debug", "Adapter", `Manual navigation, direction=${direction}`);
+		// Treat a manual click as proof that a client is active so a stale
+		// heartbeat doesn't cause the navigation to no-op.
+		this.lastVisHeartbeat = Date.now();
+		try {
+			this.tUpdateCurrentPictureTimeout && clearTimeout(this.tUpdateCurrentPictureTimeout);
+		} catch (err) {
+			Helper.ReportingError(err as Error, MsgErrUnknown, "triggerManualNav", "Clear Timer");
+		}
+		await this.updateCurrentPictureTimer(direction);
+	}
+
+	private async updateCurrentPictureTimer(direction: 1 | -1 = 1): Promise<void>{
+		if (CurrentPictureRunning === true){
+			Helper.ReportingInfo("Debug", "Adapter", "updateCurrentPictureTimer skipped, already running");
+			return;
+		}
+		CurrentPictureRunning = true;
 		let CurrentPictureResult: Picture | null = null;
 		let Provider = "";
-		Helper.ReportingInfo("Debug", "Adapter", "updateCurrentPictureTimer occured");
+		Helper.ReportingInfo("Debug", "Adapter", `updateCurrentPictureTimer occured (direction=${direction})`);
 		try{
 			this.tUpdateCurrentPictureTimeout && clearTimeout(this.tUpdateCurrentPictureTimeout);
 		}catch(err){
@@ -371,25 +452,26 @@ class Slideshow extends utils.Adapter {
 					this.updateCurrentPictureTimer();
 				}, (this.config.update_interval * 1000));
 			}
+			CurrentPictureRunning = false;
 			return;
 		}
 
 		try{
 			switch(this.config.provider){
 				case 1:
-					CurrentPictureResult = await slideBing.getPicture(Helper);
+					CurrentPictureResult = await slideBing.getPicture(Helper, direction);
 					Provider = "Bing";
 					break;
 				case 2:
-					CurrentPictureResult = await slideLocal.getPicture(Helper);
+					CurrentPictureResult = await slideLocal.getPicture(Helper, direction);
 					Provider = "Local";
 					break;
 				case 3:
-					CurrentPictureResult = await slideFS.getPicture(Helper);
+					CurrentPictureResult = await slideFS.getPicture(Helper, direction);
 					Provider = "FileSystem";
 					break;
 				case 4:
-					CurrentPictureResult = await slideSyno.getPicture(Helper);
+					CurrentPictureResult = await slideSyno.getPicture(Helper, direction);
 					Provider = "Synology";
 					break;
 			}
@@ -488,12 +570,17 @@ class Slideshow extends utils.Adapter {
 			Helper.ReportingError(err as Error, MsgErrUnknown, "updateCurrentPictureTimer", "Call Timer Action");
 		}
 		try{
-			this.tUpdateCurrentPictureTimeout = setTimeout(() => {
-				this.updateCurrentPictureTimer();
-			}, (this.config.update_interval * 1000));
+			// Only reschedule if the slideshow is currently playing. Manual
+			// prev/next while stopped changes the picture without resuming the cycle.
+			if (ControlPlay === true && this.isUnloaded === false){
+				this.tUpdateCurrentPictureTimeout = setTimeout(() => {
+					this.updateCurrentPictureTimer();
+				}, (this.config.update_interval * 1000));
+			}
 		}catch(err){
 			Helper.ReportingError(err as Error, MsgErrUnknown, "updateCurrentPictureTimer", "Set Timer");
 		}
+		CurrentPictureRunning = false;
 	}
 
 }
