@@ -15,6 +15,10 @@ const MsgErrUnknown = "Unknown Error";
 let UpdateRunning = false;
 let ControlPlay = true;
 
+// If no VIS heartbeat is seen within this window, treat the VIS view as inactive
+// and skip picture loading. Heartbeats fire every 15s from the widget.
+const VIS_HEARTBEAT_STALE_MS = 45000;
+
 interface Picture{
 	url: string;
 	path: string;
@@ -34,6 +38,7 @@ interface PictureListUpdateResult{
 class Slideshow extends utils.Adapter {
 
 	isUnloaded: boolean;
+	private lastVisHeartbeat: number = 0;
 
 	//#region Basic Adapter Functions
 
@@ -118,8 +123,27 @@ class Slideshow extends utils.Adapter {
 				native: {},
 			});
 			await this.setStateAsync("state", { val: "play", ack: true });
+			// Heartbeat state — VIS widget writes to this periodically while a view with the
+			// widget is open. If it goes stale, the adapter pauses picture cycling.
+			await this.setObjectNotExistsAsync("vis_heartbeat", {
+				type: "state",
+				common: {
+					name: "vis_heartbeat",
+					type: "number",
+					role: "indicator",
+					read: true,
+					write: true,
+					desc: "Timestamp of last VIS widget heartbeat (ms)",
+					def: 0
+				},
+				native: {},
+			});
+			const prevHeartbeat = await this.getStateAsync("vis_heartbeat");
+			this.lastVisHeartbeat = typeof prevHeartbeat?.val === "number" ? prevHeartbeat.val : 0;
+
 			this.subscribeStates("updatepicturelist");
 			this.subscribeStates("control_*");
+			this.subscribeStates("vis_heartbeat");
 
 			// Refresh album list once at startup (Synology provider only)
 			if (this.config.provider === 4) {
@@ -138,6 +162,14 @@ class Slideshow extends utils.Adapter {
 	 */
 	private async onStateChange(id: string, state: ioBroker.State | null | undefined): Promise<void> {
 		if (state) {
+			if (id === `${this.namespace}.vis_heartbeat` && state?.ack === false){
+				const ts = typeof state.val === "number" ? state.val : 0;
+				if (ts > 0) {
+					this.lastVisHeartbeat = ts;
+					await this.setStateAsync("vis_heartbeat", { val: ts, ack: true });
+				}
+				return;
+			}
 			if (id === `${this.namespace}.updatepicturelist` && state?.val === true && state?.ack === false){
 				if (UpdateRunning === true){
 					Helper.ReportingInfo("Info", "Adapter", "Update picture list already running");
@@ -329,6 +361,19 @@ class Slideshow extends utils.Adapter {
 		}catch(err){
 			Helper.ReportingError(err as Error, MsgErrUnknown, "updateCurrentPictureTimer", "Clear Timer");
 		}
+
+		// Pause when no VIS view with the widget is active. Only activates after we've
+		// seen at least one heartbeat — on a fresh install we run until a client connects.
+		if (this.lastVisHeartbeat > 0 && (Date.now() - this.lastVisHeartbeat) > VIS_HEARTBEAT_STALE_MS) {
+			Helper.ReportingInfo("Debug", "Adapter", `Paused (VIS heartbeat stale, last seen ${new Date(this.lastVisHeartbeat).toISOString()})`);
+			if (this.isUnloaded === false) {
+				this.tUpdateCurrentPictureTimeout = setTimeout(() => {
+					this.updateCurrentPictureTimer();
+				}, (this.config.update_interval * 1000));
+			}
+			return;
+		}
+
 		try{
 			switch(this.config.provider){
 				case 1:

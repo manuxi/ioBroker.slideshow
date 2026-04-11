@@ -31,8 +31,10 @@ let Helper;
 const MsgErrUnknown = "Unknown Error";
 let UpdateRunning = false;
 let ControlPlay = true;
+const VIS_HEARTBEAT_STALE_MS = 45e3;
 class Slideshow extends utils.Adapter {
   isUnloaded;
+  lastVisHeartbeat = 0;
   //#region Basic Adapter Functions
   constructor(options = {}) {
     super({
@@ -107,8 +109,24 @@ class Slideshow extends utils.Adapter {
         native: {}
       });
       await this.setStateAsync("state", { val: "play", ack: true });
+      await this.setObjectNotExistsAsync("vis_heartbeat", {
+        type: "state",
+        common: {
+          name: "vis_heartbeat",
+          type: "number",
+          role: "indicator",
+          read: true,
+          write: true,
+          desc: "Timestamp of last VIS widget heartbeat (ms)",
+          def: 0
+        },
+        native: {}
+      });
+      const prevHeartbeat = await this.getStateAsync("vis_heartbeat");
+      this.lastVisHeartbeat = typeof (prevHeartbeat == null ? void 0 : prevHeartbeat.val) === "number" ? prevHeartbeat.val : 0;
       this.subscribeStates("updatepicturelist");
       this.subscribeStates("control_*");
+      this.subscribeStates("vis_heartbeat");
       if (this.config.provider === 4) {
         await this.refreshSynoAlbumList();
       }
@@ -122,6 +140,14 @@ class Slideshow extends utils.Adapter {
    */
   async onStateChange(id, state) {
     if (state) {
+      if (id === `${this.namespace}.vis_heartbeat` && (state == null ? void 0 : state.ack) === false) {
+        const ts = typeof state.val === "number" ? state.val : 0;
+        if (ts > 0) {
+          this.lastVisHeartbeat = ts;
+          await this.setStateAsync("vis_heartbeat", { val: ts, ack: true });
+        }
+        return;
+      }
       if (id === `${this.namespace}.updatepicturelist` && (state == null ? void 0 : state.val) === true && (state == null ? void 0 : state.ack) === false) {
         if (UpdateRunning === true) {
           Helper.ReportingInfo("Info", "Adapter", "Update picture list already running");
@@ -303,6 +329,15 @@ class Slideshow extends utils.Adapter {
       this.tUpdateCurrentPictureTimeout && clearTimeout(this.tUpdateCurrentPictureTimeout);
     } catch (err) {
       Helper.ReportingError(err, MsgErrUnknown, "updateCurrentPictureTimer", "Clear Timer");
+    }
+    if (this.lastVisHeartbeat > 0 && Date.now() - this.lastVisHeartbeat > VIS_HEARTBEAT_STALE_MS) {
+      Helper.ReportingInfo("Debug", "Adapter", `Paused (VIS heartbeat stale, last seen ${new Date(this.lastVisHeartbeat).toISOString()})`);
+      if (this.isUnloaded === false) {
+        this.tUpdateCurrentPictureTimeout = setTimeout(() => {
+          this.updateCurrentPictureTimer();
+        }, this.config.update_interval * 1e3);
+      }
+      return;
     }
     try {
       switch (this.config.provider) {

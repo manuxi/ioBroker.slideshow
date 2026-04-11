@@ -132,6 +132,14 @@ $.extend(
 			"pl": "Rozmyte tło",
 			"zh-cn": "模糊背景"
 		},
+		"EnableFullscreenToggle": {
+			"en": "Toggle fullscreen on tap",
+			"de": "Vollbild per Tipp umschalten"
+		},
+		"EnableFullscreenToggle_tooltip": {
+			"en": "Tap/click on the widget toggles fullscreen. Replaces the view-change action on click.",
+			"de": "Tipp/Klick aufs Widget schaltet Vollbild um. Ersetzt die Ansichtswechsel-Aktion beim Klick."
+		},
 		"PictureFitWidget_tooltip": {
 			"en": "True = Picture fills widget, border of picture may be cut off\nFalse = Complete picture is shown, but widget may have empty zones",
 			"de": "True = Bild füllt das Widget, der Bildrand ist möglicherweise abgeschnitten \nFalse = Das vollständige Bild wird angezeigt, das Widget kann jedoch leere Zonen haben",
@@ -458,6 +466,31 @@ vis.binds["slideshow"] = {
 		console.log(`Integrating Slideshow for widget #${widgetID}`);
 		let FadeTime = parseInt(data.FadeTime) || 0;
 
+		// Heartbeat: tell the adapter that a VIS view with a slideshow widget is active.
+		// One global interval per page handles all slideshow widgets.
+		if (data.oid && !vis.editMode) {
+			const instanceNs = data.oid.split(".").slice(0, 2).join(".");
+			const heartbeatStateId = `${instanceNs}.vis_heartbeat`;
+			const sendHeartbeat = function () {
+				if ($(".slideshow-class").length === 0) {
+					if (window.__slideshowHeartbeatInterval) {
+						clearInterval(window.__slideshowHeartbeatInterval);
+						window.__slideshowHeartbeatInterval = null;
+					}
+					return;
+				}
+				try {
+					vis.conn.setState(heartbeatStateId, Date.now());
+				} catch (e) {
+					if (data.Debug === true) { console.error("Slideshow heartbeat failed:", e); }
+				}
+			};
+			sendHeartbeat();
+			if (!window.__slideshowHeartbeatInterval) {
+				window.__slideshowHeartbeatInterval = setInterval(sendHeartbeat, 15000);
+			}
+		}
+
 		function applyBlurAmount() {
 			const raw = parseFloat(data.PictureBlurAmount);
 			const amount = isNaN(raw) ? 20 : Math.max(0, raw);
@@ -570,6 +603,23 @@ vis.binds["slideshow"] = {
 		$div.on('click touchend', function (e) {
 			// Protect against two events
 			if (vis.detectBounce(this)) return;
+			if (vis.editMode) return;
+
+			// Fullscreen toggle takes priority over view navigation
+			if (data.EnableFullscreenToggle === true) {
+				const $w = $(`#${widgetID}`);
+				$w.toggleClass("slideshow-fullscreen");
+				// Re-apply fit on next frame so object-fit/scale adjust to the new container size
+				requestAnimationFrame(function () {
+					Array.from($(`#${widgetID} .slideshowpicture`)).forEach(image => {
+						if (image.complete && image.naturalWidth > 0) {
+							SlideShowFitImage(image, widgetID);
+						}
+					});
+				});
+				return;
+			}
+
 			if (data.AutoViewNavTarget === "TargetLast") {
 				vis.changeView(window.SlideShowLastView);
 			} else if (data.AutoViewNavTarget === "TargetDefined") {
@@ -594,29 +644,25 @@ vis.binds["slideshow"] = {
 			const isLandscape = image.naturalWidth > image.naturalHeight;
 
 			let effectiveFit;
-			let effectiveScale = 1.0;
 			if (mode === "contain") {
 				effectiveFit = "contain";
 			} else if (mode === "cover") {
 				effectiveFit = "cover";
-				effectiveScale = zoom;
 			} else {
-				// smart: landscape -> cover + zoom, portrait/square -> contain
-				if (isLandscape) {
-					effectiveFit = "cover";
-					effectiveScale = zoom;
-				} else {
-					effectiveFit = "contain";
-				}
+				// smart: landscape -> cover, portrait/square -> contain
+				effectiveFit = isLandscape ? "cover" : "contain";
 			}
 
+			// Zoom applies to the foreground picture regardless of fit mode:
+			// - cover + zoom>1 crops harder
+			// - contain + zoom>1 crops the letterboxed edges
 			image.style.width = "100%";
 			image.style.height = "100%";
 			image.style.maxHeight = "";
 			image.style.objectFit = effectiveFit;
-			image.style.transform = effectiveScale !== 1.0 ? `scale(${effectiveScale})` : "";
+			image.style.transform = zoom !== 1.0 ? `scale(${zoom})` : "";
 			if (data.Debug === true) {
-				console.log(`SlideShowFitImage: mode=${mode} fit=${effectiveFit} scale=${effectiveScale} landscape=${isLandscape}`);
+				console.log(`SlideShowFitImage: mode=${mode} fit=${effectiveFit} zoom=${zoom} landscape=${isLandscape}`);
 			}
 		}
 

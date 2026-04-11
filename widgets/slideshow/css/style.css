@@ -45,3 +45,18 @@
 .slideshowpicture1_bg{
 	z-index: 0;
 }
+
+.slideshow-fullscreen {
+	position: fixed !important;
+	top: 0 !important;
+	left: 0 !important;
+	right: 0 !important;
+	bottom: 0 !important;
+	width: 100vw !important;
+	height: 100vh !important;
+	max-width: none !important;
+	max-height: none !important;
+	margin: 0 !important;
+	z-index: 9999 !important;
+	background: #000;
+}
