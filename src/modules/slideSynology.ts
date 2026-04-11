@@ -382,10 +382,9 @@ async function fetchAlbumItems(Helper: GlobalHelper, apiUrl: string, album: Syno
 			additional: JSON.stringify(["description", "resolution", "orientation", "tag", "thumbnail"]),
 			SynoToken: synoToken,
 		};
+		params.album_id = album.id;
 		if (album.passphrase) {
 			params.passphrase = album.passphrase;
-		} else {
-			params.album_id = album.id;
 		}
 
 		const synResult = await synoConnection.get<any>(apiUrl, { params });
@@ -420,6 +419,17 @@ async function fetchAlbumItems(Helper: GlobalHelper, apiUrl: string, album: Syno
 		}
 		itemOffset += 500;
 	}
+}
+
+/**
+ * Public: drop the cached session so the next call reauthenticates against Synology.
+ * Used by the admin reload button so newly shared albums aren't hidden behind a cached list.
+ */
+export function invalidateSession(): void {
+	synoConnectionState = false;
+	synoToken = "";
+	cachedPhotoApiUrl = "";
+	AxiosJar.removeAllCookiesSync();
 }
 
 /**

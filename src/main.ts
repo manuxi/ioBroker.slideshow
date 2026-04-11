@@ -331,6 +331,7 @@ class Slideshow extends utils.Adapter {
 	private async onMessage(obj: ioBroker.Message): Promise<void> {
 		if (!obj || !obj.command) return;
 		if (obj.command === "listAlbums") {
+			slideSyno.invalidateSession();
 			const albums = await this.refreshSynoAlbumList();
 			const payload = albums.map(a => ({ name: a.name, space: a.space }));
 			if (obj.callback) {

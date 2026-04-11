@@ -1,5 +1,9 @@
 .slideshow-class {
 	font-style: italic;
+	position: relative;
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
 }
 
 .slideshowpicture{
@@ -99,20 +103,20 @@
 
 .slideshow-navi-icon {
 	display: block;
-	width: 18px;
-	height: 18px;
-	border-top: 4px solid #fff;
-	border-right: 4px solid #fff;
+	font-family: sans-serif;
+	font-size: 36px;
+	font-weight: 900;
+	line-height: 1;
+	color: #fff;
+	font-style: normal;
 }
 
-.slideshow-navi-left .slideshow-navi-icon {
-	transform: rotate(-135deg);
-	margin-left: 5px;
+.slideshow-navi-left .slideshow-navi-icon::before {
+	content: "\276E";
 }
 
-.slideshow-navi-right .slideshow-navi-icon {
-	transform: rotate(45deg);
-	margin-right: 5px;
+.slideshow-navi-right .slideshow-navi-icon::before {
+	content: "\276F";
 }
 
 /* Progress bar */
