@@ -521,6 +521,11 @@ vis.binds["slideshow"] = {
 		// Instance namespace derived once from data.oid (e.g. "slideshow.0.picture" -> "slideshow.0")
 		const instanceNs = data.oid ? data.oid.split(".").slice(0, 2).join(".") : "";
 
+		// Monotonic swap sequence. Rapid arrow clicks can launch multiple preloads
+		// in flight; only the most recent one may apply, otherwise a stale preload
+		// finishing late overwrites the fresh background.
+		let swapSeq = 0;
+
 		// Heartbeat: tell the adapter that a VIS view with a slideshow widget is active.
 		// One global interval per page handles all slideshow widgets.
 		if (data.oid && !vis.editMode) {
@@ -573,17 +578,15 @@ vis.binds["slideshow"] = {
 		function resetProgressBar() {
 			const $bar = $(`#${widgetID} .slideshow-progress-bar`);
 			if ($bar.length === 0) return;
-			// The interval may change at runtime; prefer a live state over data.
 			let intervalMs = 0;
-			if (instanceNs && vis.states && vis.states[`${instanceNs}.info.update_interval_ms.val`]) {
-				intervalMs = parseInt(vis.states[`${instanceNs}.info.update_interval_ms.val`], 10) || 0;
+			if (instanceNs) {
+				const raw = vis.states.attr(`${instanceNs}.info.update_interval_ms.val`);
+				intervalMs = parseInt(raw, 10) || 0;
 			}
 			if (intervalMs <= 0) {
-				// Fallback: keep the bar empty if the interval is unknown.
 				$bar.css({ "transition": "none", "width": "0%" });
 				return;
 			}
-			// Snap back to 0% without animating, then run a linear fill to 100%.
 			$bar.css({ "transition": "none", "width": "0%" });
 			// Force reflow so the next transition picks up the new starting width.
 			void $bar[0].offsetWidth;
@@ -593,28 +596,27 @@ vis.binds["slideshow"] = {
 			});
 		}
 
+		function pad2(n) { return n < 10 ? "0" + n : "" + n; }
+
+		function formatPictureDate(raw) {
+			if (raw === null || raw === undefined || raw === "") return "";
+			const ts = typeof raw === "number" ? raw : parseInt(raw, 10);
+			if (!ts || isNaN(ts)) return "";
+			const d = new Date(ts);
+			if (isNaN(d.getTime())) return "";
+			const yy = pad2(d.getFullYear() % 100);
+			return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${yy} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+		}
+
 		function updateInfoOverlay() {
 			if (!instanceNs) return;
-			const info1 = vis.states[`${instanceNs}.info1.val`] || "";
-			const info2 = vis.states[`${instanceNs}.info2.val`] || "";
-			const info3 = vis.states[`${instanceNs}.info3.val`] || "";
-			const album = vis.states[`${instanceNs}.info_album.val`] || "";
-			const dateRaw = vis.states[`${instanceNs}.date.val`];
-			let dateStr = "";
-			if (dateRaw) {
-				try {
-					const d = new Date(typeof dateRaw === "number" ? dateRaw : parseInt(dateRaw, 10));
-					if (!isNaN(d.getTime())) {
-						dateStr = d.toLocaleDateString();
-					}
-				} catch (e) { /* ignore */ }
-			}
-			$(`#${widgetID} .slideshow-info-title`).text(info1);
-			$(`#${widgetID} .slideshow-info-subtitle`).text(info2 || info3);
-			const metaParts = [];
-			if (album) metaParts.push(album);
-			if (dateStr) metaParts.push(dateStr);
-			$(`#${widgetID} .slideshow-info-meta`).text(metaParts.join(" • "));
+			const album = vis.states.attr(`${instanceNs}.info_album.val`) || "";
+			const dateRaw = vis.states.attr(`${instanceNs}.date.val`);
+			const dateStr = formatPictureDate(dateRaw);
+			const $line1 = $(`#${widgetID} .slideshow-info-line1`);
+			const $line2 = $(`#${widgetID} .slideshow-info-line2`);
+			$line1.text(album);
+			$line2.text(dateStr ? `${dateStr} Uhr` : "");
 		}
 
 		function sendControl(command) {
@@ -694,24 +696,24 @@ vis.binds["slideshow"] = {
 		function onChange(e, newVal, oldVal) {
 			if (data.Debug === true) { console.log(`Picture change occured for widget #${widgetID}`); }
 
+			const mySeq = ++swapSeq;
 			// Preload the image once so we can read natural dimensions before swap.
 			// Orientation drives whether the blur bg is loaded at all.
 			const preload = new Image();
-			const apply = function () {
-				const isPortrait = preload.naturalWidth > 0 && preload.naturalHeight > preload.naturalWidth;
+			const apply = function (ok) {
+				if (mySeq !== swapSeq) {
+					if (data.Debug === true) { console.log(`Slideshow: superseded preload seq=${mySeq} latest=${swapSeq}`); }
+					return;
+				}
+				const isPortrait = ok && preload.naturalWidth > 0 && preload.naturalHeight > preload.naturalWidth;
 				swapPicture(preload.src, isPortrait);
-				// Info overlay content may have changed too — re-read from states.
 				updateInfoOverlay();
-				// Restart the progress animation for the next interval.
 				resetProgressBar();
 			};
-			preload.addEventListener("load", apply);
+			preload.addEventListener("load", function () { apply(true); });
 			preload.addEventListener("error", function () {
 				if (data.Debug === true) { console.error("Slideshow: failed to preload picture", preload.src); }
-				// On error we can't determine orientation — default to no bg.
-				swapPicture(preload.src, false);
-				updateInfoOverlay();
-				resetProgressBar();
+				apply(false);
 			});
 			preload.src = newVal;
 		}
@@ -844,16 +846,41 @@ vis.binds["slideshow"] = {
 			vis.states.bind(data.oid + ".val", onChange);
 		}
 
-		// Overlay initial state + bindings for info1/info2/info3/album/date
+		// Overlay initial state + bindings for album/date/interval.
+		// States outside of data.oid are not auto-subscribed by VIS, so we
+		// register them explicitly via vis.conn.subscribe and seed the values
+		// with vis.conn.getStates before binding change callbacks.
 		applyOverlayVisibility();
 		if (instanceNs) {
+			const infoIds = [
+				`${instanceNs}.info_album`,
+				`${instanceNs}.date`,
+				`${instanceNs}.info.update_interval_ms`
+			];
+			try {
+				if (vis.conn && typeof vis.conn.subscribe === "function") {
+					vis.conn.subscribe(infoIds);
+				}
+			} catch (e) {
+				if (data.Debug === true) { console.error("Slideshow: subscribe failed", e); }
+			}
+			if (vis.conn && typeof vis.conn.getStates === "function") {
+				vis.conn.getStates(infoIds, function (err, states) {
+					if (err || !states) return;
+					for (const id in states) {
+						if (states[id]) {
+							vis.states.attr(`${id}.val`, states[id].val);
+							vis.states.attr(`${id}.ts`, states[id].ts);
+							vis.states.attr(`${id}.ack`, states[id].ack);
+						}
+					}
+					updateInfoOverlay();
+					resetProgressBar();
+				});
+			}
 			const onInfoStateChange = function () { updateInfoOverlay(); };
-			vis.states.bind(`${instanceNs}.info1.val`, onInfoStateChange);
-			vis.states.bind(`${instanceNs}.info2.val`, onInfoStateChange);
-			vis.states.bind(`${instanceNs}.info3.val`, onInfoStateChange);
 			vis.states.bind(`${instanceNs}.info_album.val`, onInfoStateChange);
 			vis.states.bind(`${instanceNs}.date.val`, onInfoStateChange);
-			// Restart the progress bar if the adapter updates the interval at runtime.
 			vis.states.bind(`${instanceNs}.info.update_interval_ms.val`, function () { resetProgressBar(); });
 			updateInfoOverlay();
 			resetProgressBar();
