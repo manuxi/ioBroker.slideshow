@@ -429,8 +429,40 @@ $.extend(
 			"de": "Bildinformationen-Overlay"
 		},
 		"OverlayInfo_tooltip": {
-			"en": "Show info1/info2/album/date as a gradient overlay at the bottom of the picture.",
-			"de": "Zeigt info1/info2/Album/Datum als Gradient-Overlay am unteren Rand des Bildes an."
+			"en": "Show picture metadata as an overlay at the bottom of the picture.",
+			"de": "Zeigt Bild-Metadaten als Overlay am unteren Rand des Bildes an."
+		},
+		"OverlayInfoTemplate": {
+			"en": "Info template",
+			"de": "Info-Template"
+		},
+		"OverlayInfoTemplate_tooltip": {
+			"en": "HTML template with placeholders {album}, {date}, {info1}, {info2}, {info3}. Default: <b>{album}</b><br><small>{date} Uhr</small>",
+			"de": "HTML-Template mit Platzhaltern {album}, {date}, {info1}, {info2}, {info3}. Standard: <b>{album}</b><br><small>{date} Uhr</small>"
+		},
+		"OverlayInfoDateFormat": {
+			"en": "Date format",
+			"de": "Datumsformat"
+		},
+		"OverlayInfoDateFormat_tooltip": {
+			"en": "Tokens: YYYY YY MM DD hh mm ss. Default: DD.MM.YY hh:mm",
+			"de": "Tokens: YYYY YY MM DD hh mm ss. Standard: DD.MM.YY hh:mm"
+		},
+		"ProgressColor1": {
+			"en": "Progress color (start)",
+			"de": "Progressbar-Farbe (Start)"
+		},
+		"ProgressColor1_tooltip": {
+			"en": "Left/start color of the progress bar. If equal to the end color, the bar is solid.",
+			"de": "Linke/Start-Farbe des Fortschrittsbalkens. Gleich wie Endfarbe = einfarbig."
+		},
+		"ProgressColor2": {
+			"en": "Progress color (end)",
+			"de": "Progressbar-Farbe (Ende)"
+		},
+		"ProgressColor2_tooltip": {
+			"en": "Right/end color of the progress bar. Creates a linear gradient if different from the start color.",
+			"de": "Rechte/End-Farbe des Fortschrittsbalkens. Erzeugt einen linearen Verlauf, wenn verschieden vom Startwert."
 		},
 		"none": {
 			"en": "off",
@@ -598,25 +630,70 @@ vis.binds["slideshow"] = {
 
 		function pad2(n) { return n < 10 ? "0" + n : "" + n; }
 
-		function formatPictureDate(raw) {
+		// Minimal date formatter supporting the tokens a VIS user would expect:
+		// YYYY YY MM DD hh mm ss. Longer tokens are replaced first to avoid
+		// partial-match collisions (e.g. DD inside within larger tokens).
+		function formatDateToken(fmt, d) {
+			const yyyy = d.getFullYear();
+			const rep = {
+				"YYYY": String(yyyy),
+				"YY": String(yyyy % 100).padStart(2, "0"),
+				"MM": pad2(d.getMonth() + 1),
+				"DD": pad2(d.getDate()),
+				"hh": pad2(d.getHours()),
+				"mm": pad2(d.getMinutes()),
+				"ss": pad2(d.getSeconds())
+			};
+			let out = fmt;
+			for (const tok of ["YYYY", "YY", "MM", "DD", "hh", "mm", "ss"]) {
+				out = out.split(tok).join(rep[tok]);
+			}
+			return out;
+		}
+
+		function formatPictureDate(raw, fmt) {
 			if (raw === null || raw === undefined || raw === "") return "";
 			const ts = typeof raw === "number" ? raw : parseInt(raw, 10);
 			if (!ts || isNaN(ts)) return "";
 			const d = new Date(ts);
 			if (isNaN(d.getTime())) return "";
-			const yy = pad2(d.getFullYear() % 100);
-			return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${yy} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+			return formatDateToken(fmt || "DD.MM.YY hh:mm", d);
 		}
+
+		const DEFAULT_INFO_TEMPLATE = "<b>{album}</b><br><small>{date} Uhr</small>";
 
 		function updateInfoOverlay() {
 			if (!instanceNs) return;
+			const $host = $(`#${widgetID} .slideshow-info`);
+			if ($host.length === 0) return;
 			const album = vis.states.attr(`${instanceNs}.info_album.val`) || "";
+			const info1 = vis.states.attr(`${instanceNs}.info1.val`) || "";
+			const info2 = vis.states.attr(`${instanceNs}.info2.val`) || "";
+			const info3 = vis.states.attr(`${instanceNs}.info3.val`) || "";
 			const dateRaw = vis.states.attr(`${instanceNs}.date.val`);
-			const dateStr = formatPictureDate(dateRaw);
-			const $line1 = $(`#${widgetID} .slideshow-info-line1`);
-			const $line2 = $(`#${widgetID} .slideshow-info-line2`);
-			$line1.text(album);
-			$line2.text(dateStr ? `${dateStr} Uhr` : "");
+			const dateStr = formatPictureDate(dateRaw, data.OverlayInfoDateFormat);
+			const template = (typeof data.OverlayInfoTemplate === "string" && data.OverlayInfoTemplate.trim().length > 0)
+				? data.OverlayInfoTemplate
+				: DEFAULT_INFO_TEMPLATE;
+			const rendered = template
+				.split("{album}").join(album)
+				.split("{date}").join(dateStr)
+				.split("{info1}").join(info1)
+				.split("{info2}").join(info2)
+				.split("{info3}").join(info3);
+			$host.html(rendered);
+		}
+
+		function applyProgressColors() {
+			const $bar = $(`#${widgetID} .slideshow-progress-bar`);
+			if ($bar.length === 0) return;
+			const c1 = data.ProgressColor1 || "#00bcd4";
+			const c2 = data.ProgressColor2 || c1;
+			if (c1 === c2) {
+				$bar.css("background", c1);
+			} else {
+				$bar.css("background", `linear-gradient(to right, ${c1}, ${c2})`);
+			}
 		}
 
 		function sendControl(command) {
@@ -845,6 +922,8 @@ vis.binds["slideshow"] = {
 		if (data.oid) {
 			vis.states.bind(data.oid + ".val", onChange);
 		}
+
+		applyProgressColors();
 
 		// Overlay initial state + bindings for album/date/interval.
 		// States outside of data.oid are not auto-subscribed by VIS, so we
