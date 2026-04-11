@@ -479,6 +479,62 @@ $.extend(
 		"both": {
 			"en": "normal + fullscreen",
 			"de": "normal + Vollbild"
+		},
+		"NaviStyle": {
+			"en": "Navi style",
+			"de": "Navi-Stil"
+		},
+		"NaviStyle_tooltip": {
+			"en": "Shape of the prev/next buttons.",
+			"de": "Form der Vor/Zurück-Buttons."
+		},
+		"circle": {
+			"en": "circle",
+			"de": "Kreis"
+		},
+		"button": {
+			"en": "button",
+			"de": "Button"
+		},
+		"NaviPosition": {
+			"en": "Navi position",
+			"de": "Navi-Position"
+		},
+		"NaviPosition_tooltip": {
+			"en": "Placement of the prev/next buttons.",
+			"de": "Platzierung der Vor/Zurück-Buttons."
+		},
+		"sides": {
+			"en": "left + right (centered)",
+			"de": "links + rechts (mittig)"
+		},
+		"bottomright": {
+			"en": "bottom right (pair)",
+			"de": "unten rechts (Paar)"
+		},
+		"bottomleft": {
+			"en": "bottom left (pair)",
+			"de": "unten links (Paar)"
+		},
+		"topright": {
+			"en": "top right (pair)",
+			"de": "oben rechts (Paar)"
+		},
+		"topleft": {
+			"en": "top left (pair)",
+			"de": "oben links (Paar)"
+		},
+		"NaviBgColor": {
+			"en": "Navi background color",
+			"de": "Navi-Hintergrundfarbe"
+		},
+		"NaviIconColor": {
+			"en": "Navi icon color",
+			"de": "Navi-Pfeilfarbe"
+		},
+		"NaviBorderColor": {
+			"en": "Navi border color",
+			"de": "Navi-Rahmenfarbe"
 		}
 	}
 );
@@ -601,7 +657,7 @@ vis.binds["slideshow"] = {
 			const showNavi = overlayMatches(data.OverlayNavi);
 			const showProgress = overlayMatches(data.OverlayProgress);
 			const showInfo = overlayMatches(data.OverlayInfo);
-			$(`#${widgetID} .slideshow-navi`).css("display", showNavi ? "block" : "none");
+			$(`#${widgetID} .slideshow-navi`).css("display", showNavi ? "flex" : "none");
 			$(`#${widgetID} .slideshow-progress`).css("display", showProgress ? "block" : "none");
 			$(`#${widgetID} .slideshow-info`).css("display", showInfo ? "block" : "none");
 			$(`#${widgetID} .slideshow-info`).toggleClass("has-progress", showProgress && showInfo);
@@ -615,16 +671,27 @@ vis.binds["slideshow"] = {
 				const raw = vis.states.attr(`${instanceNs}.info.update_interval_ms.val`);
 				intervalMs = parseInt(raw, 10) || 0;
 			}
+			// The bar stays at full width; clip-path reveals it from the left.
+			// This keeps the gradient spanning the container so ProgressColor2
+			// only becomes visible once the bar is nearly full.
 			if (intervalMs <= 0) {
-				$bar.css({ "transition": "none", "width": "0%" });
+				$bar.css({
+					"transition": "none",
+					"clip-path": "inset(0 100% 0 0)",
+					"-webkit-clip-path": "inset(0 100% 0 0)"
+				});
 				return;
 			}
-			$bar.css({ "transition": "none", "width": "0%" });
-			// Force reflow so the next transition picks up the new starting width.
+			$bar.css({
+				"transition": "none",
+				"clip-path": "inset(0 100% 0 0)",
+				"-webkit-clip-path": "inset(0 100% 0 0)"
+			});
 			void $bar[0].offsetWidth;
 			$bar.css({
-				"transition": `width ${intervalMs}ms linear`,
-				"width": "100%"
+				"transition": `clip-path ${intervalMs}ms linear, -webkit-clip-path ${intervalMs}ms linear`,
+				"clip-path": "inset(0 0 0 0)",
+				"-webkit-clip-path": "inset(0 0 0 0)"
 			});
 		}
 
@@ -694,6 +761,29 @@ vis.binds["slideshow"] = {
 			} else {
 				$bar.css("background", `linear-gradient(to right, ${c1}, ${c2})`);
 			}
+		}
+
+		function applyNaviVariants() {
+			const $navis = $(`#${widgetID} .slideshow-navi`);
+			if ($navis.length === 0) return;
+			const style = data.NaviStyle === "button" ? "button" : "circle";
+			const posRaw = (data.NaviPosition || "sides").toLowerCase();
+			const allowedPos = ["sides", "bottomright", "bottomleft", "topright", "topleft"];
+			const pos = allowedPos.indexOf(posRaw) !== -1 ? posRaw : "sides";
+			$navis
+				.removeClass("slideshow-navi--style-circle slideshow-navi--style-button")
+				.removeClass("slideshow-navi--pos-sides slideshow-navi--pos-bottomright slideshow-navi--pos-bottomleft slideshow-navi--pos-topright slideshow-navi--pos-topleft")
+				.addClass(`slideshow-navi--style-${style}`)
+				.addClass(`slideshow-navi--pos-${pos}`);
+
+			const bg = data.NaviBgColor || "#1e1e1e";
+			const border = data.NaviBorderColor || "#ffffff";
+			const icon = data.NaviIconColor || "#ffffff";
+			$navis.css({
+				"background-color": bg,
+				"border-color": border
+			});
+			$(`#${widgetID} .slideshow-navi-icon`).css("background-color", icon);
 		}
 
 		function sendControl(command) {
@@ -924,6 +1014,7 @@ vis.binds["slideshow"] = {
 		}
 
 		applyProgressColors();
+		applyNaviVariants();
 
 		// Overlay initial state + bindings for album/date/interval.
 		// States outside of data.oid are not auto-subscribed by VIS, so we
