@@ -626,51 +626,40 @@ vis.binds["slideshow"] = {
 			}
 		}
 
-		function swapPicture(src) {
-			const wantBg = data.PictureBackgroundBlur !== false;
-
+		function swapPicture(src, isPortrait) {
+			// The blur background is only meaningful for portrait pictures (landscape
+			// already fills the widget). Keeping it single-layer and swapping instantly
+			// avoids drift between foreground transitions and a separately animated bg.
+			const wantBg = data.PictureBackgroundBlur !== false && isPortrait === true;
+			const $bg1 = $(`#${widgetID} .slideshowpicture1_bg`);
+			const $bg2 = $(`#${widgetID} .slideshowpicture2_bg`);
+			// picture2_bg is never used — only picture1_bg carries the blur layer.
+			$bg2.hide();
 			if (wantBg) {
-				$(`#${widgetID} .slideshowpicture_bg`).show();
+				$bg1.attr("src", src).show();
 			} else {
-				$(`#${widgetID} .slideshowpicture_bg`).hide();
+				$bg1.hide();
 			}
 
 			switch (data.SlideshowEffect) {
 				case "EffectFade": {
 					const $fg = $(`#${widgetID} .slideshowpicture1`);
-					const $bg = $(`#${widgetID} .slideshowpicture1_bg`);
 					$fg.fadeOut(FadeTime, function () {
 						$fg.attr("src", src).fadeIn(FadeTime);
 					});
-					if (wantBg) {
-						$bg.fadeOut(FadeTime, function () {
-							$bg.attr("src", src).fadeIn(FadeTime);
-						});
-					}
 					break;
 				}
 				case "EffectTransition": {
 					if (data.Debug === true) { console.log("Swapping picture with transition effect"); }
 					const $hidden = $(`#${widgetID} .slideshowpicture.slideshowpicturehidden`);
 					$hidden.attr("src", src);
-					if (wantBg) {
-						$(`#${widgetID} .slideshowpicture_bg.slideshowpicturehidden`).attr("src", src);
-					}
-					// Toggle visible/hidden class on both layers in sync
+					// Toggle visible/hidden class on the two fg layers
 					if ($hidden.hasClass("slideshowpicture1")) {
 						$(`#${widgetID} .slideshowpicture2`).addClass("slideshowpicturehidden");
 						$(`#${widgetID} .slideshowpicture1`).removeClass("slideshowpicturehidden");
-						if (wantBg) {
-							$(`#${widgetID} .slideshowpicture2_bg`).addClass("slideshowpicturehidden");
-							$(`#${widgetID} .slideshowpicture1_bg`).removeClass("slideshowpicturehidden");
-						}
 					} else {
 						$(`#${widgetID} .slideshowpicture1`).addClass("slideshowpicturehidden");
 						$(`#${widgetID} .slideshowpicture2`).removeClass("slideshowpicturehidden");
-						if (wantBg) {
-							$(`#${widgetID} .slideshowpicture1_bg`).addClass("slideshowpicturehidden");
-							$(`#${widgetID} .slideshowpicture2_bg`).removeClass("slideshowpicturehidden");
-						}
 					}
 					break;
 				}
@@ -679,8 +668,6 @@ vis.binds["slideshow"] = {
 					const p1Hidden = $(`#${widgetID} .slideshowpicture2`).css("display") === "none";
 					const $incoming = p1Hidden ? $(`#${widgetID} .slideshowpicture2`) : $(`#${widgetID} .slideshowpicture1`);
 					const $outgoing = p1Hidden ? $(`#${widgetID} .slideshowpicture1`) : $(`#${widgetID} .slideshowpicture2`);
-					const $incomingBg = p1Hidden ? $(`#${widgetID} .slideshowpicture2_bg`) : $(`#${widgetID} .slideshowpicture1_bg`);
-					const $outgoingBg = p1Hidden ? $(`#${widgetID} .slideshowpicture1_bg`) : $(`#${widgetID} .slideshowpicture2_bg`);
 
 					$incoming.attr("src", src);
 					$incoming.css("z-index", 2);
@@ -688,21 +675,10 @@ vis.binds["slideshow"] = {
 					$incoming.show(data.EffectJQuery, data.EffectTransitionStyle, FadeTime, function () {
 						$outgoing.css("display", "none");
 					});
-					if (wantBg) {
-						$incomingBg.attr("src", src);
-						$incomingBg.css("z-index", 0);
-						$outgoingBg.css("z-index", 0);
-						$incomingBg.show(data.EffectJQuery, data.EffectTransitionStyle, FadeTime, function () {
-							$outgoingBg.css("display", "none");
-						});
-					}
 					break;
 				}
 				default:
 					$(`#${widgetID} .slideshowpicture1`).attr("src", src);
-					if (wantBg) {
-						$(`#${widgetID} .slideshowpicture1_bg`).attr("src", src);
-					}
 					break;
 			}
 
@@ -718,10 +694,12 @@ vis.binds["slideshow"] = {
 		function onChange(e, newVal, oldVal) {
 			if (data.Debug === true) { console.log(`Picture change occured for widget #${widgetID}`); }
 
-			// Preload the image once; both fg and bg will read it from the browser cache
+			// Preload the image once so we can read natural dimensions before swap.
+			// Orientation drives whether the blur bg is loaded at all.
 			const preload = new Image();
 			const apply = function () {
-				swapPicture(preload.src);
+				const isPortrait = preload.naturalWidth > 0 && preload.naturalHeight > preload.naturalWidth;
+				swapPicture(preload.src, isPortrait);
 				// Info overlay content may have changed too — re-read from states.
 				updateInfoOverlay();
 				// Restart the progress animation for the next interval.
@@ -730,7 +708,10 @@ vis.binds["slideshow"] = {
 			preload.addEventListener("load", apply);
 			preload.addEventListener("error", function () {
 				if (data.Debug === true) { console.error("Slideshow: failed to preload picture", preload.src); }
-				apply();
+				// On error we can't determine orientation — default to no bg.
+				swapPicture(preload.src, false);
+				updateInfoOverlay();
+				resetProgressBar();
 			});
 			preload.src = newVal;
 		}
@@ -783,12 +764,35 @@ vis.binds["slideshow"] = {
 			sendControl("next");
 		});
 
+		function applyInitialBackground() {
+			// Drive initial bg visibility from the currently visible foreground
+			// picture. Picks picture1 by default; if it hasn't loaded yet, try picture2.
+			const pics = $(`#${widgetID} .slideshowpicture`).toArray();
+			const loaded = pics.find(img => img.complete && img.naturalWidth > 0);
+			if (!loaded) return;
+			const isPortrait = loaded.naturalHeight > loaded.naturalWidth;
+			const wantBg = data.PictureBackgroundBlur !== false && isPortrait === true;
+			const $bg1 = $(`#${widgetID} .slideshowpicture1_bg`);
+			const $bg2 = $(`#${widgetID} .slideshowpicture2_bg`);
+			$bg2.hide();
+			if (wantBg) {
+				if (!$bg1.attr("src")) $bg1.attr("src", loaded.src);
+				$bg1.show();
+			} else {
+				$bg1.hide();
+			}
+		}
+
 		Array.from($(`#${widgetID} .slideshowpicture`)).forEach(image => {
-			image.addEventListener("load", () => SlideShowFitImage(image, widgetID));
+			image.addEventListener("load", () => {
+				SlideShowFitImage(image, widgetID);
+				applyInitialBackground();
+			});
 			if (image.complete && image.naturalWidth > 0) {
 				SlideShowFitImage(image, widgetID);
 			}
-		})
+		});
+		applyInitialBackground();
 
 		function SlideShowFitImage(image, widgetID) {
 			// Determine effective fit mode with backward-compatibility fallback
