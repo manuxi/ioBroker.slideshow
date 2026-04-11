@@ -132,6 +132,14 @@ $.extend(
 			"pl": "Rozmyte tło",
 			"zh-cn": "模糊背景"
 		},
+		"ZoomPortraitOnly": {
+			"en": "Zoom portrait pictures only",
+			"de": "Nur Hochkant-Bilder zoomen"
+		},
+		"ZoomPortraitOnly_tooltip": {
+			"en": "When enabled, the zoom slider only affects portrait pictures. Landscape pictures stay at their natural scale.",
+			"de": "Wenn aktiv, wirkt der Zoom-Slider nur auf Hochkant-Bilder. Querformat bleibt unskaliert."
+		},
 		"EnableFullscreenToggle": {
 			"en": "Toggle fullscreen on tap",
 			"de": "Vollbild per Tipp umschalten"
@@ -620,9 +628,9 @@ vis.binds["slideshow"] = {
 				return;
 			}
 
-			if (data.AutoViewNavTarget === "TargetLast") {
+			if (data.AutoViewNavTarget === "TargetLast" && window.SlideShowLastView) {
 				vis.changeView(window.SlideShowLastView);
-			} else if (data.AutoViewNavTarget === "TargetDefined") {
+			} else if (data.AutoViewNavTarget === "TargetDefined" && data.AutoViewTarget) {
 				vis.changeView(data.AutoViewTarget);
 			}
 		});
@@ -653,16 +661,18 @@ vis.binds["slideshow"] = {
 				effectiveFit = isLandscape ? "cover" : "contain";
 			}
 
-			// Zoom applies to the foreground picture regardless of fit mode:
-			// - cover + zoom>1 crops harder
-			// - contain + zoom>1 crops the letterboxed edges
+			// Zoom applies to the foreground picture. If ZoomPortraitOnly is enabled,
+			// landscape pictures keep their natural scale so nothing gets cropped on the sides.
+			const portraitOnly = data.ZoomPortraitOnly === true;
+			const applyZoom = zoom !== 1.0 && (!portraitOnly || !isLandscape);
+
 			image.style.width = "100%";
 			image.style.height = "100%";
 			image.style.maxHeight = "";
 			image.style.objectFit = effectiveFit;
-			image.style.transform = zoom !== 1.0 ? `scale(${zoom})` : "";
+			image.style.transform = applyZoom ? `scale(${zoom})` : "";
 			if (data.Debug === true) {
-				console.log(`SlideShowFitImage: mode=${mode} fit=${effectiveFit} zoom=${zoom} landscape=${isLandscape}`);
+				console.log(`SlideShowFitImage: mode=${mode} fit=${effectiveFit} zoom=${zoom} applied=${applyZoom} landscape=${isLandscape}`);
 			}
 		}
 
