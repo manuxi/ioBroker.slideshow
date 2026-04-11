@@ -379,6 +379,14 @@ $.extend(
 		"PictureZoomFactor_tooltip": {
 			"en": "Additional scale factor applied in cover/smart mode for landscape images (1.0 = no extra zoom)",
 			"de": "Zusätzlicher Skalierungsfaktor für Querformat-Bilder in cover/smart-Modus (1.0 = kein zusätzlicher Zoom)"
+		},
+		"PictureBlurAmount": {
+			"en": "Blur amount (px)",
+			"de": "Blur-Stärke (px)"
+		},
+		"PictureBlurAmount_tooltip": {
+			"en": "Blur radius for the background image in pixels (0 = no blur)",
+			"de": "Weichzeichnungs-Radius für das Hintergrundbild in Pixeln (0 = kein Blur)"
 		}
 	}
 );
@@ -450,88 +458,113 @@ vis.binds["slideshow"] = {
 		console.log(`Integrating Slideshow for widget #${widgetID}`);
 		let FadeTime = parseInt(data.FadeTime) || 0;
 
-		function onChange(e, newVal, oldVal) {
-			let img = new Image();
-			img.src = newVal;
+		function applyBlurAmount() {
+			const raw = parseFloat(data.PictureBlurAmount);
+			const amount = isNaN(raw) ? 20 : Math.max(0, raw);
+			$(`#${widgetID} .slideshowpicture_bg`).css("filter", `blur(${amount}px)`);
+		}
 
-			if (data.Debug === true) { console.log(`Picture change occured for widget #${widgetID}`) };
+		function swapPicture(src) {
+			const wantBg = data.PictureBackgroundBlur !== false;
 
-			if (data.PictureBackgroundBlur === false) {
-				$(`#${widgetID} .slideshowpicture_bg`).hide();
-			} else {
+			if (wantBg) {
 				$(`#${widgetID} .slideshowpicture_bg`).show();
+			} else {
+				$(`#${widgetID} .slideshowpicture_bg`).hide();
 			}
 
 			switch (data.SlideshowEffect) {
-				case "EffectFade":
-					$(`#${widgetID} .slideshowpicture1`).fadeOut(FadeTime, function () {
-						$(`#${widgetID} .slideshowpicture1`).attr("src", img.src).load(function () {
-							$(`#${widgetID} .slideshowpicture1`).fadeIn(FadeTime);
-						});
+				case "EffectFade": {
+					const $fg = $(`#${widgetID} .slideshowpicture1`);
+					const $bg = $(`#${widgetID} .slideshowpicture1_bg`);
+					$fg.fadeOut(FadeTime, function () {
+						$fg.attr("src", src).fadeIn(FadeTime);
 					});
-					if (data.PictureBackgroundBlur === true) {
-						$(`#${widgetID} .slideshowpicture1_bg`).fadeOut(FadeTime, function () {
-							$(`#${widgetID} .slideshowpicture1_bg`).attr("src", img.src).load(function () {
-								$(`#${widgetID} .slideshowpicture1_bg`).fadeIn(FadeTime);
-							});
+					if (wantBg) {
+						$bg.fadeOut(FadeTime, function () {
+							$bg.attr("src", src).fadeIn(FadeTime);
 						});
 					}
 					break;
-				case "EffectTransition":
-					if (data.Debug === true) { console.log("Load new picture in hidden img") };
-					$(`#${widgetID} .slideshowpicturehidden`).load(function () {
-						if (data.Debug === true) { console.log("Toggle hidden class") };
-						if ($(this)[0].classList.contains("slideshowpicture1")) {
-							$(`#${widgetID} .slideshowpicture2`).addClass("slideshowpicturehidden");
-							$(`#${widgetID} .slideshowpicture1`).removeClass("slideshowpicturehidden");
-							if (data.PictureBackgroundBlur === true) {
-								$(`#${widgetID} .slideshowpicture2_bg`).addClass("slideshowpicturehidden");
-								$(`#${widgetID} .slideshowpicture1_bg`).removeClass("slideshowpicturehidden");
-							}
-						} else {
-							$(`#${widgetID} .slideshowpicture1`).addClass("slideshowpicturehidden");
-							$(`#${widgetID} .slideshowpicture2`).removeClass("slideshowpicturehidden");
-							if (data.PictureBackgroundBlur === true) {
-								$(`#${widgetID} .slideshowpicture1_bg`).addClass("slideshowpicturehidden");
-								$(`#${widgetID} .slideshowpicture2_bg`).removeClass("slideshowpicturehidden");
-							}
-						}
-					}).attr("src", img.src);
-					if (data.PictureBackgroundBlur === true) {
-						$(`#${widgetID} .slideshowpicture_bg.slideshowpicturehidden`).attr("src", img.src);
+				}
+				case "EffectTransition": {
+					if (data.Debug === true) { console.log("Swapping picture with transition effect"); }
+					const $hidden = $(`#${widgetID} .slideshowpicture.slideshowpicturehidden`);
+					$hidden.attr("src", src);
+					if (wantBg) {
+						$(`#${widgetID} .slideshowpicture_bg.slideshowpicturehidden`).attr("src", src);
 					}
-					break;
-				case "EffectJQuery":
-					console.log(`Starting effect ${data.EffectJQuery}`)
-					if ($(`#${widgetID} .slideshowpicture2`).css("display") === "none") {
-						$(`#${widgetID} .slideshowpicture2`).attr("src", img.src);
-						$(`#${widgetID} .slideshowpicture2`).css("z-index", 2);
-						$(`#${widgetID} .slideshowpicture2`).show(data.EffectJQuery, data.EffectTransitionStyle, FadeTime, function () { $(`#${widgetID} .slideshowpicture1`).css("display", "none"); })
-						if (data.PictureBackgroundBlur === true) {
-							$(`#${widgetID} .slideshowpicture2_bg`).attr("src", img.src);
-							$(`#${widgetID} .slideshowpicture2_bg`).css("z-index", 0);
-							$(`#${widgetID} .slideshowpicture2_bg`).show(data.EffectJQuery, data.EffectTransitionStyle, FadeTime, function () { $(`#${widgetID} .slideshowpicture1_bg`).css("display", "none"); })
+					// Toggle visible/hidden class on both layers in sync
+					if ($hidden.hasClass("slideshowpicture1")) {
+						$(`#${widgetID} .slideshowpicture2`).addClass("slideshowpicturehidden");
+						$(`#${widgetID} .slideshowpicture1`).removeClass("slideshowpicturehidden");
+						if (wantBg) {
+							$(`#${widgetID} .slideshowpicture2_bg`).addClass("slideshowpicturehidden");
+							$(`#${widgetID} .slideshowpicture1_bg`).removeClass("slideshowpicturehidden");
 						}
 					} else {
-						$(`#${widgetID} .slideshowpicture1`).attr("src", img.src);
-						$(`#${widgetID} .slideshowpicture2`).css("z-index", 0);
-						$(`#${widgetID} .slideshowpicture1`).show(data.EffectJQuery, data.EffectTransitionStyle, FadeTime, function () { $(`#${widgetID} .slideshowpicture2`).css("display", "none"); })
-						if (data.PictureBackgroundBlur === true) {
-							$(`#${widgetID} .slideshowpicture1_bg`).attr("src", img.src);
-							$(`#${widgetID} .slideshowpicture1_bg`).css("z-index", 0);
-							$(`#${widgetID} .slideshowpicture1_bg`).show(data.EffectJQuery, data.EffectTransitionStyle, FadeTime, function () { $(`#${widgetID} .slideshowpicture2_bg`).css("display", "none"); })
+						$(`#${widgetID} .slideshowpicture1`).addClass("slideshowpicturehidden");
+						$(`#${widgetID} .slideshowpicture2`).removeClass("slideshowpicturehidden");
+						if (wantBg) {
+							$(`#${widgetID} .slideshowpicture1_bg`).addClass("slideshowpicturehidden");
+							$(`#${widgetID} .slideshowpicture2_bg`).removeClass("slideshowpicturehidden");
 						}
 					}
 					break;
+				}
+				case "EffectJQuery": {
+					if (data.Debug === true) { console.log(`Starting effect ${data.EffectJQuery}`); }
+					const p1Hidden = $(`#${widgetID} .slideshowpicture2`).css("display") === "none";
+					const $incoming = p1Hidden ? $(`#${widgetID} .slideshowpicture2`) : $(`#${widgetID} .slideshowpicture1`);
+					const $outgoing = p1Hidden ? $(`#${widgetID} .slideshowpicture1`) : $(`#${widgetID} .slideshowpicture2`);
+					const $incomingBg = p1Hidden ? $(`#${widgetID} .slideshowpicture2_bg`) : $(`#${widgetID} .slideshowpicture1_bg`);
+					const $outgoingBg = p1Hidden ? $(`#${widgetID} .slideshowpicture1_bg`) : $(`#${widgetID} .slideshowpicture2_bg`);
+
+					$incoming.attr("src", src);
+					$incoming.css("z-index", 2);
+					$outgoing.css("z-index", 1);
+					$incoming.show(data.EffectJQuery, data.EffectTransitionStyle, FadeTime, function () {
+						$outgoing.css("display", "none");
+					});
+					if (wantBg) {
+						$incomingBg.attr("src", src);
+						$incomingBg.css("z-index", 0);
+						$outgoingBg.css("z-index", 0);
+						$incomingBg.show(data.EffectJQuery, data.EffectTransitionStyle, FadeTime, function () {
+							$outgoingBg.css("display", "none");
+						});
+					}
+					break;
+				}
 				default:
-					$(`#${widgetID} .slideshowpicture1`).attr("src", img.src);
-					if (data.PictureBackgroundBlur === true) {
-						$(`#${widgetID} .slideshowpicture1_bg`).attr("src", img.src);
+					$(`#${widgetID} .slideshowpicture1`).attr("src", src);
+					if (wantBg) {
+						$(`#${widgetID} .slideshowpicture1_bg`).attr("src", src);
 					}
 					break;
 			}
 
-			img.remove();
+			// Re-apply fit + blur after swap so reactive changes in the editor take effect
+			applyBlurAmount();
+			Array.from($(`#${widgetID} .slideshowpicture`)).forEach(image => {
+				if (image.complete && image.naturalWidth > 0) {
+					SlideShowFitImage(image, widgetID);
+				}
+			});
+		}
+
+		function onChange(e, newVal, oldVal) {
+			if (data.Debug === true) { console.log(`Picture change occured for widget #${widgetID}`); }
+
+			// Preload the image once; both fg and bg will read it from the browser cache
+			const preload = new Image();
+			const apply = function () { swapPicture(preload.src); };
+			preload.addEventListener("load", apply);
+			preload.addEventListener("error", function () {
+				if (data.Debug === true) { console.error("Slideshow: failed to preload picture", preload.src); }
+				apply();
+			});
+			preload.src = newVal;
 		}
 
 		$div.on('click touchend', function (e) {
@@ -546,6 +579,9 @@ vis.binds["slideshow"] = {
 
 		Array.from($(`#${widgetID} .slideshowpicture`)).forEach(image => {
 			image.addEventListener("load", () => SlideShowFitImage(image, widgetID));
+			if (image.complete && image.naturalWidth > 0) {
+				SlideShowFitImage(image, widgetID);
+			}
 		})
 
 		function SlideShowFitImage(image, widgetID) {
@@ -590,10 +626,11 @@ vis.binds["slideshow"] = {
 			}, 100);
 		}
 
-		// Initial blur background visibility
+		// Initial blur background visibility + blur amount
 		if (data.PictureBackgroundBlur === false) {
 			$(`#${widgetID} .slideshowpicture_bg`).hide();
 		}
+		applyBlurAmount();
 
 		if (data.oid) {
 			vis.states.bind(data.oid + ".val", onChange);
