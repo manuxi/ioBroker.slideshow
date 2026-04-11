@@ -25,6 +25,14 @@ export interface SynoPictureListUpdateResult {
 	picturecount: number;
 }
 
+export interface SynoAlbum {
+	id: number;
+	name: string;
+	space: "personal" | "shared-with-me" | "team";
+	passphrase: string;
+	apiNamespace: string;
+}
+
 // Internal use for iterating folders
 interface SynoFolders {
 	id: number,
@@ -56,6 +64,9 @@ synoConnection.interceptors.request.use(config => {
 let CurrentImages: SynoPicture[];
 let CurrentImage: SynoPicture;
 let CurrentPicture: SynoPicture;
+
+// Cache for discovered Photo API URL (declared early so getPicturePrefetch can read it)
+let cachedPhotoApiUrl = "";
 
 /**
  * Build base URL from syno_path config, auto-detecting protocol.
@@ -162,9 +173,14 @@ export async function updatePictureList(Helper: GlobalHelper): Promise<SynoPictu
 	try {
 		if (Helper.Adapter.config.syno_version === 0) {
 			// DSM 7 — Synology Photos
-			const albumName = Helper.Adapter.config.syno_album?.trim();
-			if (albumName) {
-				await getDsm7AlbumItems(Helper, albumName, CurrentImageList);
+			const configuredAlbums: string[] = Array.isArray(Helper.Adapter.config.syno_albums)
+				? Helper.Adapter.config.syno_albums.map(n => (n || "").trim()).filter(n => n.length > 0)
+				: [];
+			const legacyAlbum = Helper.Adapter.config.syno_album?.trim() || "";
+			if (configuredAlbums.length > 0) {
+				await getDsm7MultiAlbumItems(Helper, configuredAlbums, CurrentImageList);
+			} else if (legacyAlbum) {
+				await getDsm7AlbumItems(Helper, legacyAlbum, CurrentImageList);
 			} else {
 				// Fallback: iterate all folders in shared space
 				await getDsm7FolderItems(Helper, CurrentImageList);
@@ -234,9 +250,6 @@ export async function updatePictureList(Helper: GlobalHelper): Promise<SynoPictu
 	}
 }
 
-// Cache for discovered Photo API URL
-let cachedPhotoApiUrl = "";
-
 /**
  * Discover available Synology Photos APIs and cache the API URL.
  * Tries multiple endpoints since some setups use /webapi/ and others /photo/webapi/
@@ -283,55 +296,19 @@ async function discoverPhotoApiUrl(Helper: GlobalHelper, baseUrl: string): Promi
 }
 
 /**
- * DSM 7: Find an album by name in personal, shared-with-me, and team space, then list its items.
+ * DSM 7: List all albums across personal, shared-with-me, and team space.
  */
-async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageList: SynoPicture[]): Promise<void> {
-	const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
+async function listAllAlbums(Helper: GlobalHelper, apiUrl: string): Promise<SynoAlbum[]> {
+	const phases: Array<{ label: SynoAlbum["space"]; api: string; extraParams: Record<string, any> }> = [
+		{ label: "personal", api: "SYNO.Foto.Browse.Album", extraParams: {} },
+		{ label: "shared-with-me", api: "SYNO.Foto.Sharing.Misc", extraParams: { method: "list_shared_with_me_album", version: 1 } },
+		{ label: "team", api: "SYNO.FotoTeam.Browse.Album", extraParams: {} },
+	];
+	const result: SynoAlbum[] = [];
 
-	// Discover correct API path — Photos APIs may live at /webapi/ or /photo/webapi/
-	const apiUrl = await discoverPhotoApiUrl(Helper, baseUrl);
-	if (!apiUrl) {
-		Helper.ReportingError(null, "Could not find Synology Photos API endpoint", "Synology", "getDsm7AlbumItems", "", false);
-		return;
-	}
-
-	// Define all search phases:
-	// 1. Personal albums (own albums)
-	// 2. Shared-with-me albums (albums other users shared with this user)
-	// 3. Team/Shared Space albums
-	const searchPhases: Array<{
-		label: string;
-		api: string;
-		extraParams: Record<string, any>;
-	}> = [
-			{
-				label: "Personal Space (own albums)",
-				api: "SYNO.Foto.Browse.Album",
-				extraParams: {}
-			},
-			{
-				label: "Shared-with-me albums",
-				api: "SYNO.Foto.Sharing.Misc",
-				extraParams: { method: "list_shared_with_me_album", version: 1 }
-			},
-			{
-				label: "Shared Space (Team)",
-				api: "SYNO.FotoTeam.Browse.Album",
-				extraParams: {}
-			}
-		];
-
-	// Collect all album names across all phases for the error message
-	const allFoundAlbumNames: string[] = [];
-
-	for (const phase of searchPhases) {
-		Helper.ReportingInfo("Debug", "Synology", `Searching for album "${albumName}" in ${phase.label}`);
-
-		let albumId: number | null = null;
-		let albumPassphrase = "";
+	for (const phase of phases) {
 		let offset = 0;
-
-		while (albumId === null) {
+		while (true) {
 			let synResult: any;
 			try {
 				synResult = await synoConnection.get<any>(apiUrl, {
@@ -339,132 +316,171 @@ async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageL
 						api: phase.api,
 						method: "list",
 						version: 2,
-						offset: offset,
+						offset,
 						limit: 100,
 						SynoToken: synoToken,
-						...phase.extraParams
-					}
+						...phase.extraParams,
+					},
 				});
 			} catch (err) {
 				Helper.ReportingInfo("Debug", "Synology", `Could not list albums in ${phase.label}: ${(err as Error).message}`);
 				break;
 			}
-
 			if (synResult.data?.success !== true || !Array.isArray(synResult.data?.data?.list)) {
 				Helper.ReportingInfo("Debug", "Synology", `No albums accessible in ${phase.label}: ${JSON.stringify(synResult.data)}`);
 				break;
 			}
-
 			const albums = synResult.data.data.list;
-			if (albums.length === 0) {
-				Helper.ReportingInfo("Debug", "Synology", `${phase.label}: no albums found (empty list)`);
-				break;
-			}
-
-			// Log all album names with their IDs for debugging
-			const albumDetails = albums.map((a: any) => `"${a.name}" (ID:${a.id}, shared:${a.shared || false}, passphrase:${a.passphrase || "none"})`).join(", ");
-			Helper.ReportingInfo("Debug", "Synology", `${phase.label}: found ${albums.length} albums at offset ${offset}: ${albumDetails}`);
+			if (albums.length === 0) break;
 
 			for (const a of albums) {
-				const name = a.name || "";
-				if (name && allFoundAlbumNames.indexOf(name) === -1) {
-					allFoundAlbumNames.push(name);
-				}
-			}
-
-			// Try exact match first
-			let found = albums.find((a: any) => a.name === albumName);
-			// Fallback: case-insensitive match
-			if (!found) {
-				const albumNameLower = albumName.toLowerCase();
-				found = albums.find((a: any) => (a.name || "").toLowerCase() === albumNameLower);
-				if (found) {
-					Helper.ReportingInfo("Info", "Synology", `Album name case mismatch: configured "${albumName}", found "${found.name}". Using found album.`);
-				}
-			}
-
-			if (found) {
-				albumId = found.id;
-				albumPassphrase = found.passphrase || "";
-				Helper.ReportingInfo("Info", "Synology", `Found album "${found.name}" (ID: ${albumId}) in ${phase.label}`);
-				break;
-			}
-
-			offset += 100;
-		}
-
-		if (albumId === null) continue;
-
-		// Determine which API namespace to use for listing items
-		const itemApiNs = phase.api.startsWith("SYNO.FotoTeam") ? "SYNO.FotoTeam" : "SYNO.Foto";
-
-		// List items from the found album
-		let itemOffset = 0;
-		while (true) {
-			const params: any = {
-				api: `${itemApiNs}.Browse.Item`,
-				method: "list",
-				version: 1,
-				offset: itemOffset,
-				limit: 500,
-				additional: JSON.stringify(["description", "resolution", "orientation", "tag", "thumbnail"]),
-				SynoToken: synoToken
-			};
-			
-			if (albumPassphrase) {
-				// Passphrase uniquely identifies the album. Sending both album_id and passphrase causes Code 120 (Invalid Condition)
-				params.passphrase = albumPassphrase;
-			} else {
-				params.album_id = albumId;
-			}
-
-			const synResult = await synoConnection.get<any>(apiUrl, { params });
-
-			if (synResult.data?.success !== true || !Array.isArray(synResult.data?.data?.list)) {
-				Helper.ReportingError(null, `Error getting pictures from album "${albumName}". Synology returned: ${JSON.stringify(synResult.data)}`, "Synology", "getDsm7AlbumItems", "", false);
-				return;
-			}
-
-			const items = synResult.data.data.list;
-			if (items.length === 0) break;
-
-			Helper.ReportingInfo("Debug", "Synology", `Album "${albumName}": ${items.length} items at offset ${itemOffset}`);
-
-			for (const element of items) {
-				let PictureDate: Date | null = null;
-				if (element.time) {
-					PictureDate = synoTimestampToDate(element.time);
-				}
-				// Extract cache_key from thumbnail additional data (required for download)
-				const cacheKey = element.additional?.thumbnail?.cache_key || "";
-				imageList.push({
-					path: String(element.id),
-					url: "",
-					info1: element.description || "",
-					info2: "",
-					info3: element.filename || "",
-					date: PictureDate,
-					x: element.additional?.resolution?.width || 0,
-					y: element.additional?.resolution?.height || 0,
-					apiNamespace: itemApiNs,
-					cacheKey: cacheKey,
-					passphrase: albumPassphrase || "",
-					album: albumName || ""
+				result.push({
+					id: a.id,
+					name: a.name || "",
+					space: phase.label,
+					passphrase: a.passphrase || "",
+					apiNamespace: phase.api.startsWith("SYNO.FotoTeam") ? "SYNO.FotoTeam" : "SYNO.Foto",
 				});
 			}
 
-			itemOffset += 500;
+			if (albums.length < 100) break;
+			offset += 100;
+		}
+	}
+
+	Helper.ReportingInfo("Debug", "Synology", `listAllAlbums: ${result.length} albums found across all spaces`);
+	return result;
+}
+
+/**
+ * DSM 7: Fetch items for a specific resolved album into the image list.
+ */
+async function fetchAlbumItems(Helper: GlobalHelper, apiUrl: string, album: SynoAlbum, imageList: SynoPicture[]): Promise<void> {
+	const itemApiNs = album.apiNamespace;
+	let itemOffset = 0;
+	while (true) {
+		const params: any = {
+			api: `${itemApiNs}.Browse.Item`,
+			method: "list",
+			version: 1,
+			offset: itemOffset,
+			limit: 500,
+			additional: JSON.stringify(["description", "resolution", "orientation", "tag", "thumbnail"]),
+			SynoToken: synoToken,
+		};
+		if (album.passphrase) {
+			params.passphrase = album.passphrase;
+		} else {
+			params.album_id = album.id;
 		}
 
-		// Found the album and processed its items — done
+		const synResult = await synoConnection.get<any>(apiUrl, { params });
+		if (synResult.data?.success !== true || !Array.isArray(synResult.data?.data?.list)) {
+			Helper.ReportingError(null, `Error getting pictures from album "${album.name}". Synology returned: ${JSON.stringify(synResult.data)}`, "Synology", "fetchAlbumItems", "", false);
+			return;
+		}
+		const items = synResult.data.data.list;
+		if (items.length === 0) break;
+
+		Helper.ReportingInfo("Debug", "Synology", `Album "${album.name}": ${items.length} items at offset ${itemOffset}`);
+		for (const element of items) {
+			let PictureDate: Date | null = null;
+			if (element.time) {
+				PictureDate = synoTimestampToDate(element.time);
+			}
+			const cacheKey = element.additional?.thumbnail?.cache_key || "";
+			imageList.push({
+				path: String(element.id),
+				url: "",
+				info1: element.description || "",
+				info2: "",
+				info3: element.filename || "",
+				date: PictureDate,
+				x: element.additional?.resolution?.width || 0,
+				y: element.additional?.resolution?.height || 0,
+				apiNamespace: itemApiNs,
+				cacheKey,
+				passphrase: album.passphrase || "",
+				album: album.name,
+			});
+		}
+		itemOffset += 500;
+	}
+}
+
+/**
+ * Public: log in, discover API, and list all albums (used by main.ts / admin message handler).
+ */
+export async function getAlbumList(Helper: GlobalHelper): Promise<SynoAlbum[]> {
+	try {
+		if (Helper.Adapter.config.syno_version !== 0) return [];
+		await loginSyno(Helper);
+		if (synoConnectionState !== true) return [];
+		const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
+		const apiUrl = await discoverPhotoApiUrl(Helper, baseUrl);
+		if (!apiUrl) return [];
+		return await listAllAlbums(Helper, apiUrl);
+	} catch (err) {
+		Helper.ReportingError(err as Error, "Unknown error", "Synology", "getAlbumList");
+		return [];
+	}
+}
+
+/**
+ * DSM 7: Find an album by name in personal, shared-with-me, and team space, then list its items.
+ */
+async function getDsm7AlbumItems(Helper: GlobalHelper, albumName: string, imageList: SynoPicture[]): Promise<void> {
+	const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
+	const apiUrl = await discoverPhotoApiUrl(Helper, baseUrl);
+	if (!apiUrl) {
+		Helper.ReportingError(null, "Could not find Synology Photos API endpoint", "Synology", "getDsm7AlbumItems", "", false);
 		return;
 	}
 
-	// Album not found in any space — provide helpful error message
-	const availableAlbums = allFoundAlbumNames.length > 0
-		? `Available albums: ${allFoundAlbumNames.map(n => `"${n}"`).join(", ")}`
-		: "No albums were found in any space. Make sure the user has access to shared albums.";
-	Helper.ReportingError(null, `Album "${albumName}" not found. Searched in: Personal Space, Shared-with-me, and Shared Space (Team). ${availableAlbums}`, "Synology", "getDsm7AlbumItems", "", false);
+	const allAlbums = await listAllAlbums(Helper, apiUrl);
+	let album = allAlbums.find(a => a.name === albumName);
+	if (!album) {
+		const lower = albumName.toLowerCase();
+		album = allAlbums.find(a => a.name.toLowerCase() === lower);
+		if (album) {
+			Helper.ReportingInfo("Info", "Synology", `Album name case mismatch: configured "${albumName}", found "${album.name}". Using found album.`);
+		}
+	}
+	if (!album) {
+		const available = allAlbums.length > 0
+			? `Available albums: ${allAlbums.map(a => `"${a.name}" (${a.space})`).join(", ")}`
+			: "No albums were found in any space.";
+		Helper.ReportingError(null, `Album "${albumName}" not found. ${available}`, "Synology", "getDsm7AlbumItems", "", false);
+		return;
+	}
+
+	Helper.ReportingInfo("Info", "Synology", `Found album "${album.name}" (id ${album.id}, ${album.space})`);
+	await fetchAlbumItems(Helper, apiUrl, album, imageList);
+}
+
+/**
+ * DSM 7: Fetch items from multiple selected albums and aggregate them.
+ */
+async function getDsm7MultiAlbumItems(Helper: GlobalHelper, albumNames: string[], imageList: SynoPicture[]): Promise<void> {
+	const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
+	const apiUrl = await discoverPhotoApiUrl(Helper, baseUrl);
+	if (!apiUrl) {
+		Helper.ReportingError(null, "Could not find Synology Photos API endpoint", "Synology", "getDsm7MultiAlbumItems", "", false);
+		return;
+	}
+
+	const allAlbums = await listAllAlbums(Helper, apiUrl);
+	const wanted = new Set(albumNames.map(n => (n || "").trim()).filter(n => n.length > 0));
+	const matched = allAlbums.filter(a => wanted.has(a.name));
+	const missing = [...wanted].filter(name => !matched.find(a => a.name === name));
+	if (missing.length > 0) {
+		Helper.ReportingInfo("Info", "Synology", `Multi-album: ${missing.length} configured album(s) not found: ${missing.join(", ")}`);
+	}
+	Helper.ReportingInfo("Info", "Synology", `Multi-album: fetching items from ${matched.length}/${wanted.size} albums`);
+
+	for (const album of matched) {
+		await fetchAlbumItems(Helper, apiUrl, album, imageList);
+	}
 }
 
 /**

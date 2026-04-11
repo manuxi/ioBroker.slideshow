@@ -16,6 +16,7 @@ declare global {
 			syno_username: string;
 			syno_userpass: string;
 			syno_album: string;
+			syno_albums: string[];
 			syno_format: number;
 			syno_order: number;
 		}

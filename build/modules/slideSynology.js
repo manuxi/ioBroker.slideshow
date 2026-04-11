@@ -28,6 +28,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 var slideSynology_exports = {};
 __export(slideSynology_exports, {
+  getAlbumList: () => getAlbumList,
   getPicture: () => getPicture,
   getPicturePrefetch: () => getPicturePrefetch,
   updatePictureList: () => updatePictureList
@@ -55,6 +56,7 @@ synoConnection.interceptors.request.use((config) => {
 let CurrentImages;
 let CurrentImage;
 let CurrentPicture;
+let cachedPhotoApiUrl = "";
 function getBaseUrl(synoPath) {
   if (synoPath.startsWith("http://") || synoPath.startsWith("https://")) {
     return synoPath.replace(/\/+$/, "");
@@ -137,9 +139,12 @@ async function updatePictureList(Helper) {
   const CurrentImageList = [];
   try {
     if (Helper.Adapter.config.syno_version === 0) {
-      const albumName = (_a = Helper.Adapter.config.syno_album) == null ? void 0 : _a.trim();
-      if (albumName) {
-        await getDsm7AlbumItems(Helper, albumName, CurrentImageList);
+      const configuredAlbums = Array.isArray(Helper.Adapter.config.syno_albums) ? Helper.Adapter.config.syno_albums.map((n) => (n || "").trim()).filter((n) => n.length > 0) : [];
+      const legacyAlbum = ((_a = Helper.Adapter.config.syno_album) == null ? void 0 : _a.trim()) || "";
+      if (configuredAlbums.length > 0) {
+        await getDsm7MultiAlbumItems(Helper, configuredAlbums, CurrentImageList);
+      } else if (legacyAlbum) {
+        await getDsm7AlbumItems(Helper, legacyAlbum, CurrentImageList);
       } else {
         await getDsm7FolderItems(Helper, CurrentImageList);
       }
@@ -193,7 +198,6 @@ async function updatePictureList(Helper) {
     return { success: true, picturecount: CurrentImages.length };
   }
 }
-let cachedPhotoApiUrl = "";
 async function discoverPhotoApiUrl(Helper, baseUrl) {
   var _a, _b;
   if (cachedPhotoApiUrl)
@@ -232,38 +236,17 @@ async function discoverPhotoApiUrl(Helper, baseUrl) {
   Helper.Adapter.log.error(`Could not find Synology Photos API endpoint. Tried: ${endpoints.join(", ")}`);
   return null;
 }
-async function getDsm7AlbumItems(Helper, albumName, imageList) {
-  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l;
-  const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
-  const apiUrl = await discoverPhotoApiUrl(Helper, baseUrl);
-  if (!apiUrl) {
-    Helper.ReportingError(null, "Could not find Synology Photos API endpoint", "Synology", "getDsm7AlbumItems", "", false);
-    return;
-  }
-  const searchPhases = [
-    {
-      label: "Personal Space (own albums)",
-      api: "SYNO.Foto.Browse.Album",
-      extraParams: {}
-    },
-    {
-      label: "Shared-with-me albums",
-      api: "SYNO.Foto.Sharing.Misc",
-      extraParams: { method: "list_shared_with_me_album", version: 1 }
-    },
-    {
-      label: "Shared Space (Team)",
-      api: "SYNO.FotoTeam.Browse.Album",
-      extraParams: {}
-    }
+async function listAllAlbums(Helper, apiUrl) {
+  var _a, _b, _c;
+  const phases = [
+    { label: "personal", api: "SYNO.Foto.Browse.Album", extraParams: {} },
+    { label: "shared-with-me", api: "SYNO.Foto.Sharing.Misc", extraParams: { method: "list_shared_with_me_album", version: 1 } },
+    { label: "team", api: "SYNO.FotoTeam.Browse.Album", extraParams: {} }
   ];
-  const allFoundAlbumNames = [];
-  for (const phase of searchPhases) {
-    Helper.ReportingInfo("Debug", "Synology", `Searching for album "${albumName}" in ${phase.label}`);
-    let albumId = null;
-    let albumPassphrase = "";
+  const result = [];
+  for (const phase of phases) {
     let offset = 0;
-    while (albumId === null) {
+    while (true) {
       let synResult;
       try {
         synResult = await synoConnection.get(apiUrl, {
@@ -286,89 +269,136 @@ async function getDsm7AlbumItems(Helper, albumName, imageList) {
         break;
       }
       const albums = synResult.data.data.list;
-      if (albums.length === 0) {
-        Helper.ReportingInfo("Debug", "Synology", `${phase.label}: no albums found (empty list)`);
+      if (albums.length === 0)
         break;
-      }
-      const albumDetails = albums.map((a) => `"${a.name}" (ID:${a.id}, shared:${a.shared || false}, passphrase:${a.passphrase || "none"})`).join(", ");
-      Helper.ReportingInfo("Debug", "Synology", `${phase.label}: found ${albums.length} albums at offset ${offset}: ${albumDetails}`);
       for (const a of albums) {
-        const name = a.name || "";
-        if (name && allFoundAlbumNames.indexOf(name) === -1) {
-          allFoundAlbumNames.push(name);
-        }
-      }
-      let found = albums.find((a) => a.name === albumName);
-      if (!found) {
-        const albumNameLower = albumName.toLowerCase();
-        found = albums.find((a) => (a.name || "").toLowerCase() === albumNameLower);
-        if (found) {
-          Helper.ReportingInfo("Info", "Synology", `Album name case mismatch: configured "${albumName}", found "${found.name}". Using found album.`);
-        }
-      }
-      if (found) {
-        albumId = found.id;
-        albumPassphrase = found.passphrase || "";
-        Helper.ReportingInfo("Info", "Synology", `Found album "${found.name}" (ID: ${albumId}) in ${phase.label}`);
-        break;
-      }
-      offset += 100;
-    }
-    if (albumId === null)
-      continue;
-    const itemApiNs = phase.api.startsWith("SYNO.FotoTeam") ? "SYNO.FotoTeam" : "SYNO.Foto";
-    let itemOffset = 0;
-    while (true) {
-      const params = {
-        api: `${itemApiNs}.Browse.Item`,
-        method: "list",
-        version: 1,
-        offset: itemOffset,
-        limit: 500,
-        additional: JSON.stringify(["description", "resolution", "orientation", "tag", "thumbnail"]),
-        SynoToken: synoToken
-      };
-      if (albumPassphrase) {
-        params.passphrase = albumPassphrase;
-      } else {
-        params.album_id = albumId;
-      }
-      const synResult = await synoConnection.get(apiUrl, { params });
-      if (((_d = synResult.data) == null ? void 0 : _d.success) !== true || !Array.isArray((_f = (_e = synResult.data) == null ? void 0 : _e.data) == null ? void 0 : _f.list)) {
-        Helper.ReportingError(null, `Error getting pictures from album "${albumName}". Synology returned: ${JSON.stringify(synResult.data)}`, "Synology", "getDsm7AlbumItems", "", false);
-        return;
-      }
-      const items = synResult.data.data.list;
-      if (items.length === 0)
-        break;
-      Helper.ReportingInfo("Debug", "Synology", `Album "${albumName}": ${items.length} items at offset ${itemOffset}`);
-      for (const element of items) {
-        let PictureDate = null;
-        if (element.time) {
-          PictureDate = synoTimestampToDate(element.time);
-        }
-        const cacheKey = ((_h = (_g = element.additional) == null ? void 0 : _g.thumbnail) == null ? void 0 : _h.cache_key) || "";
-        imageList.push({
-          path: String(element.id),
-          url: "",
-          info1: element.description || "",
-          info2: "",
-          info3: element.filename || "",
-          date: PictureDate,
-          x: ((_j = (_i = element.additional) == null ? void 0 : _i.resolution) == null ? void 0 : _j.width) || 0,
-          y: ((_l = (_k = element.additional) == null ? void 0 : _k.resolution) == null ? void 0 : _l.height) || 0,
-          apiNamespace: itemApiNs,
-          cacheKey,
-          passphrase: albumPassphrase || "",
-          album: albumName || ""
+        result.push({
+          id: a.id,
+          name: a.name || "",
+          space: phase.label,
+          passphrase: a.passphrase || "",
+          apiNamespace: phase.api.startsWith("SYNO.FotoTeam") ? "SYNO.FotoTeam" : "SYNO.Foto"
         });
       }
-      itemOffset += 500;
+      if (albums.length < 100)
+        break;
+      offset += 100;
     }
+  }
+  Helper.ReportingInfo("Debug", "Synology", `listAllAlbums: ${result.length} albums found across all spaces`);
+  return result;
+}
+async function fetchAlbumItems(Helper, apiUrl, album, imageList) {
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i;
+  const itemApiNs = album.apiNamespace;
+  let itemOffset = 0;
+  while (true) {
+    const params = {
+      api: `${itemApiNs}.Browse.Item`,
+      method: "list",
+      version: 1,
+      offset: itemOffset,
+      limit: 500,
+      additional: JSON.stringify(["description", "resolution", "orientation", "tag", "thumbnail"]),
+      SynoToken: synoToken
+    };
+    if (album.passphrase) {
+      params.passphrase = album.passphrase;
+    } else {
+      params.album_id = album.id;
+    }
+    const synResult = await synoConnection.get(apiUrl, { params });
+    if (((_a = synResult.data) == null ? void 0 : _a.success) !== true || !Array.isArray((_c = (_b = synResult.data) == null ? void 0 : _b.data) == null ? void 0 : _c.list)) {
+      Helper.ReportingError(null, `Error getting pictures from album "${album.name}". Synology returned: ${JSON.stringify(synResult.data)}`, "Synology", "fetchAlbumItems", "", false);
+      return;
+    }
+    const items = synResult.data.data.list;
+    if (items.length === 0)
+      break;
+    Helper.ReportingInfo("Debug", "Synology", `Album "${album.name}": ${items.length} items at offset ${itemOffset}`);
+    for (const element of items) {
+      let PictureDate = null;
+      if (element.time) {
+        PictureDate = synoTimestampToDate(element.time);
+      }
+      const cacheKey = ((_e = (_d = element.additional) == null ? void 0 : _d.thumbnail) == null ? void 0 : _e.cache_key) || "";
+      imageList.push({
+        path: String(element.id),
+        url: "",
+        info1: element.description || "",
+        info2: "",
+        info3: element.filename || "",
+        date: PictureDate,
+        x: ((_g = (_f = element.additional) == null ? void 0 : _f.resolution) == null ? void 0 : _g.width) || 0,
+        y: ((_i = (_h = element.additional) == null ? void 0 : _h.resolution) == null ? void 0 : _i.height) || 0,
+        apiNamespace: itemApiNs,
+        cacheKey,
+        passphrase: album.passphrase || "",
+        album: album.name
+      });
+    }
+    itemOffset += 500;
+  }
+}
+async function getAlbumList(Helper) {
+  try {
+    if (Helper.Adapter.config.syno_version !== 0)
+      return [];
+    await loginSyno(Helper);
+    if (synoConnectionState !== true)
+      return [];
+    const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
+    const apiUrl = await discoverPhotoApiUrl(Helper, baseUrl);
+    if (!apiUrl)
+      return [];
+    return await listAllAlbums(Helper, apiUrl);
+  } catch (err) {
+    Helper.ReportingError(err, "Unknown error", "Synology", "getAlbumList");
+    return [];
+  }
+}
+async function getDsm7AlbumItems(Helper, albumName, imageList) {
+  const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
+  const apiUrl = await discoverPhotoApiUrl(Helper, baseUrl);
+  if (!apiUrl) {
+    Helper.ReportingError(null, "Could not find Synology Photos API endpoint", "Synology", "getDsm7AlbumItems", "", false);
     return;
   }
-  const availableAlbums = allFoundAlbumNames.length > 0 ? `Available albums: ${allFoundAlbumNames.map((n) => `"${n}"`).join(", ")}` : "No albums were found in any space. Make sure the user has access to shared albums.";
-  Helper.ReportingError(null, `Album "${albumName}" not found. Searched in: Personal Space, Shared-with-me, and Shared Space (Team). ${availableAlbums}`, "Synology", "getDsm7AlbumItems", "", false);
+  const allAlbums = await listAllAlbums(Helper, apiUrl);
+  let album = allAlbums.find((a) => a.name === albumName);
+  if (!album) {
+    const lower = albumName.toLowerCase();
+    album = allAlbums.find((a) => a.name.toLowerCase() === lower);
+    if (album) {
+      Helper.ReportingInfo("Info", "Synology", `Album name case mismatch: configured "${albumName}", found "${album.name}". Using found album.`);
+    }
+  }
+  if (!album) {
+    const available = allAlbums.length > 0 ? `Available albums: ${allAlbums.map((a) => `"${a.name}" (${a.space})`).join(", ")}` : "No albums were found in any space.";
+    Helper.ReportingError(null, `Album "${albumName}" not found. ${available}`, "Synology", "getDsm7AlbumItems", "", false);
+    return;
+  }
+  Helper.ReportingInfo("Info", "Synology", `Found album "${album.name}" (id ${album.id}, ${album.space})`);
+  await fetchAlbumItems(Helper, apiUrl, album, imageList);
+}
+async function getDsm7MultiAlbumItems(Helper, albumNames, imageList) {
+  const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
+  const apiUrl = await discoverPhotoApiUrl(Helper, baseUrl);
+  if (!apiUrl) {
+    Helper.ReportingError(null, "Could not find Synology Photos API endpoint", "Synology", "getDsm7MultiAlbumItems", "", false);
+    return;
+  }
+  const allAlbums = await listAllAlbums(Helper, apiUrl);
+  const wanted = new Set(albumNames.map((n) => (n || "").trim()).filter((n) => n.length > 0));
+  const matched = allAlbums.filter((a) => wanted.has(a.name));
+  const missing = [...wanted].filter((name) => !matched.find((a) => a.name === name));
+  if (missing.length > 0) {
+    Helper.ReportingInfo("Info", "Synology", `Multi-album: ${missing.length} configured album(s) not found: ${missing.join(", ")}`);
+  }
+  Helper.ReportingInfo("Info", "Synology", `Multi-album: fetching items from ${matched.length}/${wanted.size} albums`);
+  for (const album of matched) {
+    await fetchAlbumItems(Helper, apiUrl, album, imageList);
+  }
 }
 async function getDsm7FolderItems(Helper, imageList) {
   const baseUrl = getBaseUrl(Helper.Adapter.config.syno_path);
@@ -675,6 +705,7 @@ async function sortByKey(array, key) {
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  getAlbumList,
   getPicture,
   getPicturePrefetch,
   updatePictureList

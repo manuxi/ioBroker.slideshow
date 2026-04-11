@@ -41,6 +41,7 @@ class Slideshow extends utils.Adapter {
     });
     this.on("ready", this.onReady.bind(this));
     this.on("stateChange", this.onStateChange.bind(this));
+    this.on("message", this.onMessage.bind(this));
     this.on("unload", this.onUnload.bind(this));
     this.isUnloaded = false;
   }
@@ -108,6 +109,9 @@ class Slideshow extends utils.Adapter {
       await this.setStateAsync("state", { val: "play", ack: true });
       this.subscribeStates("updatepicturelist");
       this.subscribeStates("control_*");
+      if (this.config.provider === 4) {
+        await this.refreshSynoAlbumList();
+      }
       await this.updatePictureStoreTimer();
     } catch (err) {
       Helper.ReportingError(err, MsgErrUnknown, "onReady");
@@ -183,6 +187,48 @@ class Slideshow extends utils.Adapter {
       callback();
     } catch (e) {
       callback();
+    }
+  }
+  /**
+   * Fetch the Synology album list and store it in state info.albums as JSON.
+   * Called on adapter start (if provider = Synology) and on 'listAlbums' sendTo message.
+   */
+  async refreshSynoAlbumList() {
+    try {
+      const albums = await slideSyno.getAlbumList(Helper);
+      await this.setObjectNotExistsAsync("info.albums", {
+        type: "state",
+        common: {
+          name: "info.albums",
+          type: "string",
+          role: "json",
+          read: true,
+          write: false,
+          desc: "Synology albums discovered at adapter start"
+        },
+        native: {}
+      });
+      const payload = albums.map((a) => ({ name: a.name, space: a.space }));
+      await this.setStateAsync("info.albums", { val: JSON.stringify(payload), ack: true });
+      Helper.ReportingInfo("Info", "Adapter", `Synology album list refreshed: ${albums.length} albums`);
+      return albums;
+    } catch (err) {
+      Helper.ReportingError(err, MsgErrUnknown, "refreshSynoAlbumList");
+      return [];
+    }
+  }
+  /**
+   * Is called if a message is sent to this instance (e.g. from the admin config page)
+   */
+  async onMessage(obj) {
+    if (!obj || !obj.command)
+      return;
+    if (obj.command === "listAlbums") {
+      const albums = await this.refreshSynoAlbumList();
+      const payload = albums.map((a) => ({ name: a.name, space: a.space }));
+      if (obj.callback) {
+        this.sendTo(obj.from, obj.command, payload, obj.callback);
+      }
     }
   }
   //#endregion

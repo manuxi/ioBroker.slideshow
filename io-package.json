@@ -179,6 +179,7 @@
     "syno_username": "",
     "syno_userpass": "",
     "syno_album": "",
+    "syno_albums": [],
     "syno_format": 0,
     "syno_order": 0,
     "downloadLocationData": false
