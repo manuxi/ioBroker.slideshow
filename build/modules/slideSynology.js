@@ -31,6 +31,7 @@ __export(slideSynology_exports, {
   getAlbumList: () => getAlbumList,
   getPicture: () => getPicture,
   getPicturePrefetch: () => getPicturePrefetch,
+  invalidateSession: () => invalidateSession,
   updatePictureList: () => updatePictureList
 });
 module.exports = __toCommonJS(slideSynology_exports);
@@ -310,10 +311,9 @@ async function fetchAlbumItems(Helper, apiUrl, album, imageList) {
       additional: JSON.stringify(["description", "resolution", "orientation", "tag", "thumbnail"]),
       SynoToken: synoToken
     };
+    params.album_id = album.id;
     if (album.passphrase) {
       params.passphrase = album.passphrase;
-    } else {
-      params.album_id = album.id;
     }
     const synResult = await synoConnection.get(apiUrl, { params });
     if (((_a = synResult.data) == null ? void 0 : _a.success) !== true || !Array.isArray((_c = (_b = synResult.data) == null ? void 0 : _b.data) == null ? void 0 : _c.list)) {
@@ -347,6 +347,12 @@ async function fetchAlbumItems(Helper, apiUrl, album, imageList) {
     }
     itemOffset += 500;
   }
+}
+function invalidateSession() {
+  synoConnectionState = false;
+  synoToken = "";
+  cachedPhotoApiUrl = "";
+  AxiosJar.removeAllCookiesSync();
 }
 async function getAlbumList(Helper) {
   try {
@@ -716,6 +722,7 @@ async function sortByKey(array, key) {
   getAlbumList,
   getPicture,
   getPicturePrefetch,
+  invalidateSession,
   updatePictureList
 });
 //# sourceMappingURL=slideSynology.js.map
