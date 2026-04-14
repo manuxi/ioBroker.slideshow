@@ -535,22 +535,6 @@ $.extend(
 		"NaviBorderColor": {
 			"en": "Navi border color",
 			"de": "Navi-Rahmenfarbe"
-		},
-		"InfoPosition": {
-			"en": "Info position",
-			"de": "Info-Position"
-		},
-		"InfoPosition_tooltip": {
-			"en": "bottom/top: full-width strip with gradient fade. Corner positions render a compact box — useful when navigation buttons occupy the same area.",
-			"de": "bottom/top: breiter Streifen mit Verlauf. Eck-Positionen rendern eine kompakte Box — sinnvoll, wenn die Navi-Buttons dieselbe Ecke belegen."
-		},
-		"bottom": {
-			"en": "bottom (bar)",
-			"de": "unten (Leiste)"
-		},
-		"top": {
-			"en": "top (bar)",
-			"de": "oben (Leiste)"
 		}
 	}
 );
@@ -777,17 +761,6 @@ vis.binds["slideshow"] = {
 			} else {
 				$bar.css("background", `linear-gradient(to right, ${c1}, ${c2})`);
 			}
-		}
-
-		function applyInfoVariants() {
-			const $info = $(`#${widgetID} .slideshow-info`);
-			if ($info.length === 0) return;
-			const allowed = ["bottom", "top", "bottomleft", "bottomright", "topleft", "topright"];
-			const posRaw = (data.InfoPosition || "bottom").toLowerCase();
-			const pos = allowed.indexOf(posRaw) !== -1 ? posRaw : "bottom";
-			$info
-				.removeClass(allowed.map(p => `slideshow-info--pos-${p}`).join(" "))
-				.addClass(`slideshow-info--pos-${pos}`);
 		}
 
 		function applyNaviVariants() {
@@ -1042,7 +1015,6 @@ vis.binds["slideshow"] = {
 
 		applyProgressColors();
 		applyNaviVariants();
-		applyInfoVariants();
 
 		// Overlay initial state + bindings for album/date/interval.
 		// States outside of data.oid are not auto-subscribed by VIS, so we
