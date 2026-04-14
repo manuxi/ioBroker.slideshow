@@ -111,15 +111,23 @@
 .slideshow-navi--pos-sides.slideshow-navi-left { left: 14px; }
 .slideshow-navi--pos-sides.slideshow-navi-right { right: 14px; }
 
+/*
+ * Pair positions: both buttons in the same corner. Offsets are chosen so
+ * the edge-to-edge gap is always ~10px regardless of style (circle = 64px,
+ * button = 56px).
+ * circle: far button at 16, near button at 16 + 64 + 10 = 90
+ * button: far button at 16, near button at 16 + 56 + 10 = 82
+ */
+
 /* --- Position: bottom-right (pair) --- */
 .slideshow-navi--pos-bottomright {
 	bottom: 16px;
 	top: auto;
 	transform: none;
 }
-.slideshow-navi--pos-bottomright.slideshow-navi-left { right: 86px; left: auto; }
+.slideshow-navi--pos-bottomright.slideshow-navi-left { right: 90px; left: auto; }
 .slideshow-navi--pos-bottomright.slideshow-navi-right { right: 16px; left: auto; }
-.slideshow-navi--pos-bottomright.slideshow-navi--style-button.slideshow-navi-left { right: 72px; }
+.slideshow-navi--pos-bottomright.slideshow-navi--style-button.slideshow-navi-left { right: 82px; }
 
 /* --- Position: bottom-left (pair) --- */
 .slideshow-navi--pos-bottomleft {
@@ -128,17 +136,17 @@
 	transform: none;
 }
 .slideshow-navi--pos-bottomleft.slideshow-navi-left { left: 16px; right: auto; }
-.slideshow-navi--pos-bottomleft.slideshow-navi-right { left: 86px; right: auto; }
-.slideshow-navi--pos-bottomleft.slideshow-navi--style-button.slideshow-navi-right { left: 72px; }
+.slideshow-navi--pos-bottomleft.slideshow-navi-right { left: 90px; right: auto; }
+.slideshow-navi--pos-bottomleft.slideshow-navi--style-button.slideshow-navi-right { left: 82px; }
 
 /* --- Position: top-right (pair) --- */
 .slideshow-navi--pos-topright {
 	top: 16px;
 	transform: none;
 }
-.slideshow-navi--pos-topright.slideshow-navi-left { right: 86px; left: auto; }
+.slideshow-navi--pos-topright.slideshow-navi-left { right: 90px; left: auto; }
 .slideshow-navi--pos-topright.slideshow-navi-right { right: 16px; left: auto; }
-.slideshow-navi--pos-topright.slideshow-navi--style-button.slideshow-navi-left { right: 72px; }
+.slideshow-navi--pos-topright.slideshow-navi--style-button.slideshow-navi-left { right: 82px; }
 
 /* --- Position: top-left (pair) --- */
 .slideshow-navi--pos-topleft {
@@ -146,8 +154,8 @@
 	transform: none;
 }
 .slideshow-navi--pos-topleft.slideshow-navi-left { left: 16px; right: auto; }
-.slideshow-navi--pos-topleft.slideshow-navi-right { left: 86px; right: auto; }
-.slideshow-navi--pos-topleft.slideshow-navi--style-button.slideshow-navi-right { left: 72px; }
+.slideshow-navi--pos-topleft.slideshow-navi-right { left: 90px; right: auto; }
+.slideshow-navi--pos-topleft.slideshow-navi--style-button.slideshow-navi-right { left: 82px; }
 
 /* --- Icon via SVG mask: background-color = icon color --- */
 .slideshow-navi-icon {
@@ -225,6 +233,39 @@
 	pointer-events: none;
 }
 
+/* Bar layouts: full-width strip with gradient fade */
+.slideshow-info--pos-bottom {
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: linear-gradient(to top, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0));
+}
+
+.slideshow-info--pos-top {
+	left: 0;
+	right: 0;
+	top: 0;
+	bottom: auto;
+	background: linear-gradient(to bottom, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0));
+}
+
+/* Box layouts: compact card, useful when Navi sits in another corner */
+.slideshow-info--pos-bottomleft,
+.slideshow-info--pos-bottomright,
+.slideshow-info--pos-topleft,
+.slideshow-info--pos-topright {
+	padding: 10px 14px;
+	max-width: 60%;
+	background: rgba(0, 0, 0, 0.55);
+	border-radius: 6px;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.slideshow-info--pos-bottomleft { left: 16px; right: auto; bottom: 16px; }
+.slideshow-info--pos-bottomright { left: auto; right: 16px; bottom: 16px; }
+.slideshow-info--pos-topleft { left: 16px; right: auto; top: 16px; bottom: auto; }
+.slideshow-info--pos-topright { left: auto; right: 16px; top: 16px; bottom: auto; }
+
 .slideshow-info b {
 	font-size: 18px;
 	font-weight: 700;
@@ -240,7 +281,7 @@
 	margin-top: 2px;
 }
 
-/* When progress bar is present alongside info overlay, lift the info slightly */
-.slideshow-info.has-progress {
+/* When progress bar is present alongside bottom-bar info, lift the info slightly */
+.slideshow-info--pos-bottom.has-progress {
 	bottom: 4px;
 }
