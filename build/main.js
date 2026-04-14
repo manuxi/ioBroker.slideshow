@@ -439,84 +439,42 @@ class Slideshow extends utils.Adapter {
     try {
       if (CurrentPictureResult !== null && this.isUnloaded === false) {
         Helper.ReportingInfo("Debug", Provider, `Set picture to ${CurrentPictureResult.path}`);
-        await this.setObjectNotExistsAsync("picture", {
-          type: "state",
-          common: {
-            name: "picture",
-            type: "string",
-            role: "text",
-            read: true,
-            write: false,
-            desc: "Current picture"
-          },
-          native: {}
-        });
-        await this.setStateAsync("picture", { val: CurrentPictureResult.url, ack: true });
         await this.setObjectNotExistsAsync("info1", {
           type: "state",
-          common: {
-            name: "info1",
-            type: "string",
-            role: "text",
-            read: true,
-            write: false,
-            desc: "Info 1 for picture"
-          },
+          common: { name: "info1", type: "string", role: "text", read: true, write: false, desc: "Info 1 for picture" },
+          native: {}
+        });
+        await this.setObjectNotExistsAsync("info2", {
+          type: "state",
+          common: { name: "info2", type: "string", role: "text", read: true, write: false, desc: "Info 2 for picture" },
+          native: {}
+        });
+        await this.setObjectNotExistsAsync("info3", {
+          type: "state",
+          common: { name: "info3", type: "string", role: "text", read: true, write: false, desc: "Info 3 for picture" },
+          native: {}
+        });
+        await this.setObjectNotExistsAsync("info_album", {
+          type: "state",
+          common: { name: "info_album", type: "string", role: "text", read: true, write: false, desc: "Album of picture" },
+          native: {}
+        });
+        await this.setObjectNotExistsAsync("date", {
+          type: "state",
+          common: { name: "date", type: "number", role: "date", read: true, write: false, desc: "Date of picture" },
+          native: {}
+        });
+        await this.setObjectNotExistsAsync("picture", {
+          type: "state",
+          common: { name: "picture", type: "string", role: "text", read: true, write: false, desc: "Current picture" },
           native: {}
         });
         await this.setStateAsync("info1", { val: CurrentPictureResult.info1, ack: true });
-        await this.setObjectNotExistsAsync("info2", {
-          type: "state",
-          common: {
-            name: "info2",
-            type: "string",
-            role: "text",
-            read: true,
-            write: false,
-            desc: "Info 2 for picture"
-          },
-          native: {}
-        });
         await this.setStateAsync("info2", { val: CurrentPictureResult.info2, ack: true });
-        await this.setObjectNotExistsAsync("info3", {
-          type: "state",
-          common: {
-            name: "info3",
-            type: "string",
-            role: "text",
-            read: true,
-            write: false,
-            desc: "Info 3 for picture"
-          },
-          native: {}
-        });
         await this.setStateAsync("info3", { val: CurrentPictureResult.info3, ack: true });
-        await this.setObjectNotExistsAsync("info_album", {
-          type: "state",
-          common: {
-            name: "info_album",
-            type: "string",
-            role: "text",
-            read: true,
-            write: false,
-            desc: "Album of picture"
-          },
-          native: {}
-        });
         await this.setStateAsync("info_album", { val: CurrentPictureResult.album || "", ack: true });
-        await this.setObjectNotExistsAsync("date", {
-          type: "state",
-          common: {
-            name: "date",
-            type: "number",
-            role: "date",
-            read: true,
-            write: false,
-            desc: "Date of picture"
-          },
-          native: {}
-        });
         await this.setStateAsync("date", { val: ((_a = CurrentPictureResult.date) == null ? void 0 : _a.getTime()) || null, ack: true });
+        await this.setStateAsync("picture", { val: CurrentPictureResult.url, ack: true });
       }
     } catch (err) {
       Helper.ReportingError(err, MsgErrUnknown, "updateCurrentPictureTimer", "Call Timer Action");
