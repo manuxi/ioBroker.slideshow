@@ -390,7 +390,7 @@ class Slideshow extends utils.Adapter {
     await this.updateCurrentPictureTimer(direction);
   }
   async updateCurrentPictureTimer(direction = 1) {
-    var _a;
+    var _a, _b;
     if (CurrentPictureRunning === true) {
       Helper.ReportingInfo("Debug", "Adapter", "updateCurrentPictureTimer skipped, already running");
       return;
@@ -469,11 +469,26 @@ class Slideshow extends utils.Adapter {
           common: { name: "picture", type: "string", role: "text", read: true, write: false, desc: "Current picture" },
           native: {}
         });
+        await this.setObjectNotExistsAsync("current_slide", {
+          type: "state",
+          common: { name: "current_slide", type: "string", role: "json", read: true, write: false, desc: "Current slide payload with image and metadata" },
+          native: {}
+        });
+        const currentSlide = {
+          url: CurrentPictureResult.url,
+          path: CurrentPictureResult.path,
+          info1: CurrentPictureResult.info1,
+          info2: CurrentPictureResult.info2,
+          info3: CurrentPictureResult.info3,
+          date: ((_a = CurrentPictureResult.date) == null ? void 0 : _a.getTime()) || null,
+          album: CurrentPictureResult.album || ""
+        };
+        await this.setStateAsync("current_slide", { val: JSON.stringify(currentSlide), ack: true });
         await this.setStateAsync("info1", { val: CurrentPictureResult.info1, ack: true });
         await this.setStateAsync("info2", { val: CurrentPictureResult.info2, ack: true });
         await this.setStateAsync("info3", { val: CurrentPictureResult.info3, ack: true });
         await this.setStateAsync("info_album", { val: CurrentPictureResult.album || "", ack: true });
-        await this.setStateAsync("date", { val: ((_a = CurrentPictureResult.date) == null ? void 0 : _a.getTime()) || null, ack: true });
+        await this.setStateAsync("date", { val: ((_b = CurrentPictureResult.date) == null ? void 0 : _b.getTime()) || null, ack: true });
         await this.setStateAsync("picture", { val: CurrentPictureResult.url, ack: true });
       }
     } catch (err) {

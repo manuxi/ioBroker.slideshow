@@ -629,6 +629,7 @@ vis.binds["slideshow"] = {
 		// in flight; only the most recent one may apply, otherwise a stale preload
 		// finishing late overwrites the fresh background.
 		let swapSeq = 0;
+		let currentSlidePayload = null;
 
 		// Heartbeat: tell the adapter that a VIS view with a slideshow widget is active.
 		// One global interval per page handles all slideshow widgets.
@@ -745,15 +746,34 @@ vis.binds["slideshow"] = {
 
 		const DEFAULT_INFO_TEMPLATE = "<b>{album}</b><br><small>{date} Uhr</small>";
 
+		function parseCurrentSlide(raw) {
+			if (typeof raw !== "string" || raw.trim().length === 0) return null;
+			try {
+				const parsed = JSON.parse(raw);
+				if (!parsed || typeof parsed.url !== "string" || parsed.url.trim().length === 0) return null;
+				return {
+					url: parsed.url,
+					album: parsed.album || "",
+					info1: parsed.info1 || "",
+					info2: parsed.info2 || "",
+					info3: parsed.info3 || "",
+					date: parsed.date
+				};
+			} catch (e) {
+				if (data.Debug === true) { console.error("Slideshow: invalid current_slide payload", e, raw); }
+				return null;
+			}
+		}
+
 		function updateInfoOverlay() {
 			if (!instanceNs) return;
 			const $host = $(`#${widgetID} .slideshow-info`);
 			if ($host.length === 0) return;
-			const album = vis.states.attr(`${instanceNs}.info_album.val`) || "";
-			const info1 = vis.states.attr(`${instanceNs}.info1.val`) || "";
-			const info2 = vis.states.attr(`${instanceNs}.info2.val`) || "";
-			const info3 = vis.states.attr(`${instanceNs}.info3.val`) || "";
-			const dateRaw = vis.states.attr(`${instanceNs}.date.val`);
+			const album = currentSlidePayload ? currentSlidePayload.album : (vis.states.attr(`${instanceNs}.info_album.val`) || "");
+			const info1 = currentSlidePayload ? currentSlidePayload.info1 : (vis.states.attr(`${instanceNs}.info1.val`) || "");
+			const info2 = currentSlidePayload ? currentSlidePayload.info2 : (vis.states.attr(`${instanceNs}.info2.val`) || "");
+			const info3 = currentSlidePayload ? currentSlidePayload.info3 : (vis.states.attr(`${instanceNs}.info3.val`) || "");
+			const dateRaw = currentSlidePayload ? currentSlidePayload.date : vis.states.attr(`${instanceNs}.date.val`);
 			const dateStr = formatPictureDate(dateRaw, data.OverlayInfoDateFormat);
 			const template = (typeof data.OverlayInfoTemplate === "string" && data.OverlayInfoTemplate.trim().length > 0)
 				? data.OverlayInfoTemplate
@@ -765,6 +785,29 @@ vis.binds["slideshow"] = {
 				.split("{info2}").join(info2)
 				.split("{info3}").join(info3);
 			$host.html(rendered);
+		}
+
+		function applySlidePayload(payload) {
+			if (!payload || typeof payload.url !== "string" || payload.url.trim().length === 0) return;
+			currentSlidePayload = payload;
+			const mySeq = ++swapSeq;
+			const preload = new Image();
+			const apply = function (ok) {
+				if (mySeq !== swapSeq) {
+					if (data.Debug === true) { console.log(`Slideshow: superseded slide payload seq=${mySeq} latest=${swapSeq}`); }
+					return;
+				}
+				const isPortrait = ok && preload.naturalWidth > 0 && preload.naturalHeight > preload.naturalWidth;
+				swapPicture(preload.src, isPortrait);
+				updateInfoOverlay();
+				resetProgressBar();
+			};
+			preload.addEventListener("load", function () { apply(true); });
+			preload.addEventListener("error", function () {
+				if (data.Debug === true) { console.error("Slideshow: failed to preload slide payload picture", preload.src); }
+				apply(false);
+			});
+			preload.src = payload.url;
 		}
 
 		function applyProgressColors() {
@@ -889,6 +932,7 @@ vis.binds["slideshow"] = {
 
 		function onChange(e, newVal, oldVal) {
 			if (data.Debug === true) { console.log(`Picture change occured for widget #${widgetID}`); }
+			if (currentSlidePayload && currentSlidePayload.url === newVal) return;
 
 			const mySeq = ++swapSeq;
 			// Preload the image once so we can read natural dimensions before swap.
@@ -1051,7 +1095,11 @@ vis.binds["slideshow"] = {
 		applyOverlayVisibility();
 		if (instanceNs) {
 			const infoIds = [
+				`${instanceNs}.current_slide`,
 				`${instanceNs}.info_album`,
+				`${instanceNs}.info1`,
+				`${instanceNs}.info2`,
+				`${instanceNs}.info3`,
 				`${instanceNs}.date`,
 				`${instanceNs}.info.update_interval_ms`
 			];
@@ -1072,12 +1120,26 @@ vis.binds["slideshow"] = {
 							vis.states.attr(`${id}.ack`, states[id].ack);
 						}
 					}
+					const initialSlide = parseCurrentSlide(vis.states.attr(`${instanceNs}.current_slide.val`));
+					if (initialSlide) {
+						applySlidePayload(initialSlide);
+						return;
+					}
 					updateInfoOverlay();
 					resetProgressBar();
 				});
 			}
+			vis.states.bind(`${instanceNs}.current_slide.val`, function (e, newVal) {
+				const payload = parseCurrentSlide(newVal);
+				if (payload) {
+					applySlidePayload(payload);
+				}
+			});
 			const onInfoStateChange = function () { updateInfoOverlay(); };
 			vis.states.bind(`${instanceNs}.info_album.val`, onInfoStateChange);
+			vis.states.bind(`${instanceNs}.info1.val`, onInfoStateChange);
+			vis.states.bind(`${instanceNs}.info2.val`, onInfoStateChange);
+			vis.states.bind(`${instanceNs}.info3.val`, onInfoStateChange);
 			vis.states.bind(`${instanceNs}.date.val`, onInfoStateChange);
 			vis.states.bind(`${instanceNs}.info.update_interval_ms.val`, function () { resetProgressBar(); });
 			updateInfoOverlay();

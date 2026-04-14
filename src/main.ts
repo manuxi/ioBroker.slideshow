@@ -32,6 +32,16 @@ interface Picture{
 	album: string;
 }
 
+interface CurrentSlideState{
+	url: string;
+	path: string;
+	info1: string;
+	info2: string;
+	info3: string;
+	date: number | null;
+	album: string;
+}
+
 interface PictureListUpdateResult{
 	success: boolean;
 	picturecount: number;
@@ -514,6 +524,21 @@ class Slideshow extends utils.Adapter {
 					common: { name: "picture", type: "string", role: "text", read: true, write: false, desc: "Current picture" },
 					native: {},
 				});
+				await this.setObjectNotExistsAsync("current_slide", {
+					type: "state",
+					common: { name: "current_slide", type: "string", role: "json", read: true, write: false, desc: "Current slide payload with image and metadata" },
+					native: {},
+				});
+				const currentSlide: CurrentSlideState = {
+					url: CurrentPictureResult.url,
+					path: CurrentPictureResult.path,
+					info1: CurrentPictureResult.info1,
+					info2: CurrentPictureResult.info2,
+					info3: CurrentPictureResult.info3,
+					date: CurrentPictureResult.date?.getTime() || null,
+					album: CurrentPictureResult.album || "",
+				};
+				await this.setStateAsync("current_slide", { val: JSON.stringify(currentSlide), ack: true });
 				await this.setStateAsync("info1", { val: CurrentPictureResult.info1, ack: true });
 				await this.setStateAsync("info2", { val: CurrentPictureResult.info2, ack: true });
 				await this.setStateAsync("info3", { val: CurrentPictureResult.info3, ack: true });
