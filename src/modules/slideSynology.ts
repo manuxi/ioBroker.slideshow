@@ -382,9 +382,10 @@ async function fetchAlbumItems(Helper: GlobalHelper, apiUrl: string, album: Syno
 			additional: JSON.stringify(["description", "resolution", "orientation", "tag", "thumbnail"]),
 			SynoToken: synoToken,
 		};
-		params.album_id = album.id;
 		if (album.passphrase) {
 			params.passphrase = album.passphrase;
+		} else {
+			params.album_id = album.id;
 		}
 
 		const synResult = await synoConnection.get<any>(apiUrl, { params });
